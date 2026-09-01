@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sbp
+      POSTGRES_PASSWORD: sbp
+      POSTGRES_DB: school_bag_planner
+    ports:
+      - "5432:5432"
+    volumes:
+      - sbp_pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sbp -d school_bag_planner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sbp_pgdata:

@@ -1,0 +1,515 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Connection URL lives in prisma.config.ts (Prisma 7); PrismaClient itself
+// is constructed with a driver adapter in lib/prisma.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js (database adapter) tables — shape required by @auth/prisma-adapter.
+// See CLAUDE.md "Auth warning": database sessions are required, not JWT-only.
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts Account[]
+  sessions Session[]
+
+  teacher Teacher?
+  parent  Parent?
+  student Student?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Domain model — see CLAUDE.md "Domain model" and "Invariants" before editing.
+// ---------------------------------------------------------------------------
+
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+enum ItemCopyState {
+  WITH_STUDENT
+  GRADING
+  LOST
+  RETIRED
+}
+
+enum ExceptionKind {
+  HOLIDAY
+  PERIOD_SWAP
+  EXAM
+  CANCELLED_PERIOD
+}
+
+enum PackingSessionStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+enum PackingCheckMethod {
+  SCAN
+}
+
+enum PointReason {
+  PACKING_COMPLETE
+  REDEMPTION
+  MORNING_CHECK_FAIL
+  MANUAL_ADJUST
+}
+
+enum RedemptionStatus {
+  PENDING
+  FULFILLED
+}
+
+model School {
+  id   String @id @default(cuid())
+  name String
+
+  classrooms         Classroom[]
+  scheduleExceptions ScheduleException[]
+  rewards            Reward[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("schools")
+}
+
+model Classroom {
+  id       String @id @default(cuid())
+  schoolId String
+  name     String // e.g. "ป.4/1"
+
+  school               School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments          Enrollment[]
+  teachingAssignments  TeachingAssignment[]
+  timetableSlots       TimetableSlot[]
+  scheduleExceptions   ScheduleException[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@map("classrooms")
+}
+
+model Student {
+  id     String  @id @default(cuid())
+  userId String? @unique // nullable: a student does not necessarily have a login
+  name   String
+
+  // Most students have no Gmail of their own — a teacher issues this code +
+  // password pair (see lib/roster.ts's issueStudentCredentials) instead of
+  // Google sign-in. passwordHash is bcrypt, never the plaintext; the
+  // plaintext is shown to the teacher exactly once, at issuance, and never
+  // stored. failedLoginAttempts/lockedUntil are a minimal brute-force guard
+  // — this is a credential for a minor (CLAUDE.md "Privacy").
+  studentCode         String?   @unique
+  passwordHash        String?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  user              User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  enrollments       Enrollment[]
+  guardianships     Guardianship[]
+  itemCopies        ItemCopy[]
+  packingSessions   PackingSession[]
+  pointLedger       PointLedger[]
+  redemptions       Redemption[]
+  pushSubscriptions PushSubscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("students")
+}
+
+// A student's classroom membership over time. "Active" enrollment for a date
+// is the one with matching startDate/endDate — required so requiredItemsFor()
+// resolves the correct classroom even after a mid-year transfer.
+model Enrollment {
+  id          String    @id @default(cuid())
+  studentId   String
+  classroomId String
+  startDate   DateTime  @db.Date
+  endDate     DateTime? @db.Date
+
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([studentId])
+  @@index([classroomId])
+  @@map("enrollments")
+}
+
+// userId is nullable and email is the bootstrap key: a parent profile is
+// created by a teacher/admin before the parent has ever logged in, so the
+// real Auth.js User row (and its generated id) does not exist yet. The
+// events.signIn hook in auth.ts links userId the first time someone signs
+// in with a matching, Google-verified email.
+model Parent {
+  id     String  @id @default(cuid())
+  userId String? @unique
+  email  String  @unique
+  name   String
+
+  user          User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  guardianships Guardianship[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("parents")
+}
+
+model Guardianship {
+  id        String @id @default(cuid())
+  parentId  String
+  studentId String
+
+  parent  Parent  @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([parentId, studentId])
+  @@index([studentId])
+  @@map("guardianships")
+}
+
+// See the comment on Parent above — same email-bootstrap pattern.
+model Teacher {
+  id     String  @id @default(cuid())
+  userId String? @unique
+  email  String  @unique
+  name   String
+
+  user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  teachingAssignments TeachingAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("teachers")
+}
+
+// A teacher may teach a subject to a classroom. can() checks this table to
+// scope which classrooms a teacher may read or write — never a bare role check.
+model TeachingAssignment {
+  id          String @id @default(cuid())
+  teacherId   String
+  classroomId String
+  subjectId   String
+
+  teacher   Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([teacherId, classroomId, subjectId])
+  @@index([classroomId])
+  @@map("teaching_assignments")
+}
+
+model Subject {
+  id   String @id @default(cuid())
+  name String // e.g. "คณิตศาสตร์"
+
+  subjectItems        SubjectItem[]
+  timetableSlots       TimetableSlot[]
+  teachingAssignments  TeachingAssignment[]
+  scheduleExceptions   ScheduleException[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subjects")
+}
+
+// The abstract item required by a subject, e.g. "Math P.4 workbook".
+// Invariant 1: never merge this with ItemCopy.
+model SubjectItem {
+  id        String @id @default(cuid())
+  subjectId String
+  name      String // e.g. "แบบฝึกหัดคณิตศาสตร์ ป.4"
+
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  itemCopies ItemCopy[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subjectId])
+  @@map("subject_items")
+}
+
+// One physical copy of a SubjectItem, owned by one student. Grading state
+// lives here (invariant 1). The currently-bound sticker is whichever of
+// its QRCodes has state=ASSIGNED (see QRCode below) — not a column here,
+// per invariant 3.
+model ItemCopy {
+  id            String        @id @default(cuid())
+  subjectItemId String
+  studentId     String
+  state         ItemCopyState @default(WITH_STUDENT)
+
+  subjectItem SubjectItem @relation(fields: [subjectItemId], references: [id], onDelete: Cascade)
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  qrCodes     QRCode[]
+  packingChecks PackingCheck[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subjectItemId, studentId])
+  @@index([studentId])
+  @@map("item_copies")
+}
+
+enum QRCodeState {
+  UNASSIGNED
+  ASSIGNED
+  VOID
+}
+
+// Invariant 2: the code itself is opaque, carries no data. Invariant 3: a
+// code is replaceable, an ItemCopy is not — binding a new code voids the
+// old one rather than deleting/reusing it, so itemCopyId stays set through
+// VOID for history. The "current" code for a copy is whichever of its
+// QRCodes has state=ASSIGNED (at most one, enforced in lib/qr.ts's
+// transaction, not a DB constraint).
+model QRCode {
+  code       String      @id
+  state      QRCodeState @default(UNASSIGNED)
+  itemCopyId String?
+  itemCopy   ItemCopy?   @relation(fields: [itemCopyId], references: [id], onDelete: SetNull)
+  boundAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([itemCopyId])
+  @@map("qr_codes")
+}
+
+// The recurring weekly slot: this classroom has this subject on this weekday/period.
+model TimetableSlot {
+  id          String  @id @default(cuid())
+  classroomId String
+  subjectId   String
+  weekday     Weekday
+  period      Int // 1-based teaching period of the day
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([classroomId, weekday, period])
+  @@index([classroomId])
+  @@map("timetable_slots")
+}
+
+// Deviation from the recurring timetable for one calendar date. Invariant 6:
+// every "what's needed on date D" query must apply these, not just weekday+period.
+// classroomId null = school-wide (e.g. a national holiday); set = one classroom only.
+// period/subjectId are the payload for PERIOD_SWAP/EXAM (the substituted period);
+// unused for HOLIDAY and CANCELLED_PERIOD wipes the given period only.
+model ScheduleException {
+  id          String        @id @default(cuid())
+  schoolId    String
+  classroomId String?
+  date        DateTime      @db.Date
+  kind        ExceptionKind
+  period      Int?
+  subjectId   String?
+  note        String?
+
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classroom Classroom? @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  subject   Subject?   @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, date])
+  @@index([classroomId, date])
+  @@map("schedule_exceptions")
+}
+
+// ---------------------------------------------------------------------------
+// Packing, points, rewards — see CLAUDE.md "Anti-cheat", "Points are an
+// append-only ledger" (invariant 4), and "Data collection for later CV work".
+// ---------------------------------------------------------------------------
+
+// One evening's packing attempt for one student. Anti-cheat: only one
+// attempt at a time, bounded to a few minutes (lib/packing.ts), never
+// trusting a client timestamp. pointsAwarded guards against double-award
+// on a race, it is not itself a business fact.
+model PackingSession {
+  id            String               @id @default(cuid())
+  studentId     String
+  forDate       DateTime             @db.Date
+  status        PackingSessionStatus @default(ACTIVE)
+  startedAt     DateTime             @default(now())
+  completedAt   DateTime?
+  pointsAwarded Boolean              @default(false)
+
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  checks  PackingCheck[]
+
+  createdAt DateTime @default(now())
+
+  @@index([studentId, forDate])
+  @@map("packing_sessions")
+}
+
+// One item confirmed packed by scanning its QR code. photoPath is a private
+// on-disk path, never a public URL (CLAUDE.md "Privacy") — the frame
+// captured here is unused today but is exactly the CV training data
+// CLAUDE.md says not to discard.
+model PackingCheck {
+  id         String             @id @default(cuid())
+  sessionId  String
+  itemCopyId String
+  method     PackingCheckMethod @default(SCAN)
+  photoPath  String?
+  createdAt  DateTime           @default(now())
+
+  session  PackingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  itemCopy ItemCopy       @relation(fields: [itemCopyId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, itemCopyId])
+  @@index([itemCopyId])
+  @@map("packing_checks")
+}
+
+// Invariant 4: append-only, balance is SUM(delta). actorUserId is the audit
+// trail invariant 7 requires for teacher overrides (MORNING_CHECK_FAIL,
+// MANUAL_ADJUST) — null means system-awarded (PACKING_COMPLETE).
+model PointLedger {
+  id          String      @id @default(cuid())
+  studentId   String
+  delta       Int
+  reason      PointReason
+  refId       String?
+  actorUserId String?
+  createdAt   DateTime    @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@map("point_ledger")
+}
+
+model Reward {
+  id       String  @id @default(cuid())
+  schoolId String
+  name     String
+  cost     Int
+  active   Boolean @default(true)
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  redemptions Redemption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@map("rewards")
+}
+
+model Redemption {
+  id                   String           @id @default(cuid())
+  studentId            String
+  rewardId             String
+  pointsSpent          Int
+  status               RedemptionStatus @default(PENDING)
+  createdAt            DateTime         @default(now())
+  fulfilledAt          DateTime?
+  fulfilledByTeacherId String?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  reward  Reward  @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([rewardId])
+  @@map("redemptions")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  studentId String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@map("push_subscriptions")
+}

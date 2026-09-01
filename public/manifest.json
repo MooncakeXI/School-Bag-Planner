@@ -1,0 +1,14 @@
+{
+  "name": "จัดกระเป๋าไปโรงเรียน",
+  "short_name": "จัดกระเป๋า",
+  "description": "แอปช่วยนักเรียนจัดกระเป๋าไปโรงเรียนให้ครบตามตารางเรียน",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "lang": "th",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
