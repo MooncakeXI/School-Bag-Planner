@@ -21,7 +21,12 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   ]);
 
   return (
-    <div className="flex-1 flex flex-col">
+    // md:h-dvh + md:overflow-hidden turns the row below into its own
+    // scroll container on tablet/desktop, so the sidebar (given its own
+    // overflow-y-auto) stays fixed in place instead of scrolling away with
+    // a long page (e.g. a classroom's full student roster) — mobile is
+    // untouched (no sidebar there; the bottom tab bar is already `fixed`).
+    <div className="flex-1 flex flex-col md:h-dvh md:overflow-hidden">
       {/* Compact iOS nav bar — just identity + sign out. The big page title
           lives in each page's own PageHeader, not here (see components/page-header.tsx). */}
       <header className="sticky top-0 z-30 border-b border-border/80 bg-background/85 backdrop-blur-lg print:hidden">
@@ -38,9 +43,9 @@ export default async function TeacherLayout({ children }: { children: React.Reac
           once — see each component's own responsive classes. The sidebar's
           own shape never changes across routes; viewing a specific
           classroom only expands a nested section under "ห้องเรียน". */}
-      <div className="flex flex-1 md:flex-row">
+      <div className="flex flex-1 min-h-0 md:flex-row">
         <TeacherSidebar classrooms={classrooms} pendingRedemptionCount={pendingRedemptionCount} />
-        <div className="flex-1 min-w-0 bg-background p-4 pb-24 md:p-6">{children}</div>
+        <div className="flex-1 min-w-0 bg-background p-4 pb-24 md:overflow-y-auto md:p-6">{children}</div>
       </div>
       <TeacherTabBar pendingRedemptionCount={pendingRedemptionCount} />
     </div>

@@ -37,7 +37,7 @@ export function TeacherSidebar({
   const currentClassroom = classroomMatch ? classrooms.find((c) => c.id === classroomMatch[1]) : undefined;
 
   return (
-    <nav className="hidden w-56 shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground md:flex">
+    <nav className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground md:flex">
       <div className="flex items-center gap-2 px-2 py-3 font-heading text-sm font-semibold">
         <Backpack className="size-4.5 text-sidebar-primary" />
         จัดกระเป๋าไปโรงเรียน
