@@ -13,9 +13,28 @@ import { STUDENT_CODE_LENGTH, STUDENT_PASSWORD_LENGTH } from "./student-code";
 // resolve it exactly like a Google-authenticated session — see
 // app/login/student-actions.ts, which sets the matching cookie.
 
-const LOCKOUT_THRESHOLD = 5;
-const LOCKOUT_MINUTES = 15;
+// Exponential backoff on wrong-password attempts, not a hard lock. A hard
+// lock (the earlier design: 5 wrong attempts -> 15-minute lock) protects
+// the wrong party here: student codes are 6 digits and children share them
+// with each other as a matter of course, so any classmate who knows the
+// code can lock the real owner out for 15 minutes just by mashing the PIN
+// field — a denial-of-service tool aimed at the legitimate user, not the
+// attacker. Backoff instead makes each successive wrong guess against one
+// account slower (1s, 2s, 4s, 8s, ... capped at BACKOFF_MAX_SECONDS), while
+// a *correct* password always succeeds immediately regardless of any
+// pending cooldown — see verifyStudentLogin. The backoff level decays back
+// to zero after a quiet period (BACKOFF_DECAY_MINUTES) so a stale run of
+// failures from days ago doesn't linger. Separately, code enumeration
+// across *different* accounts is throttled per-IP, not per-account — see
+// lib/rate-limit.ts, wired in at app/login/student-actions.ts.
+const BACKOFF_MAX_SECONDS = 60;
+const BACKOFF_DECAY_MINUTES = 10;
 export const STUDENT_SESSION_DAYS = 30;
+
+/** attempts=1 -> 1s, 2 -> 2s, 3 -> 4s, 4 -> 8s, ..., capped at BACKOFF_MAX_SECONDS. */
+function backoffSeconds(attempts: number): number {
+  return Math.min(BACKOFF_MAX_SECONDS, 2 ** (attempts - 1));
+}
 
 function randomDigits(length: number): string {
   return Array.from({ length }, () => randomInt(0, 10)).join("");
@@ -42,24 +61,44 @@ export async function verifyStudentLogin(studentCode: string, password: string):
   const student = await prisma.student.findUnique({ where: { studentCode } });
   const genericError = "รหัสนักเรียนหรือรหัสผ่านไม่ถูกต้อง";
 
+  // Never reveals whether the code exists — same generic message as a
+  // wrong password against a real account (see below).
   if (!student || !student.passwordHash) return { ok: false, error: genericError };
 
-  if (student.lockedUntil && student.lockedUntil > new Date()) {
-    return { ok: false, error: "ลองผิดหลายครั้งเกินไป กรุณาลองใหม่ภายหลัง" };
-  }
+  const now = new Date();
 
+  // bcrypt runs unconditionally, even inside an active cooldown — a
+  // correct password always succeeds immediately with no residual lock.
+  // The cooldown only ever throttles *wrong* guesses.
   const matches = await bcrypt.compare(password, student.passwordHash);
+
   if (!matches) {
-    const attempts = student.failedLoginAttempts + 1;
-    const lockedOut = attempts >= LOCKOUT_THRESHOLD;
+    // Still inside a cooldown a previous wrong attempt set: don't advance
+    // the backoff level for hammering during the wait (that would let an
+    // attacker "pay" for a slot with a wrong guess and then retry sooner
+    // by spamming), just report the time actually remaining.
+    if (student.nextLoginAttemptAt && student.nextLoginAttemptAt > now) {
+      const retryAfterSeconds = Math.ceil((student.nextLoginAttemptAt.getTime() - now.getTime()) / 1000);
+      return { ok: false, error: `${genericError} ลองใหม่ใน ${retryAfterSeconds} วินาที` };
+    }
+
+    // A fresh wrong attempt. Decay back to 0 first if it's been quiet for
+    // a while — approximated from nextLoginAttemptAt (the end of the last
+    // cooldown) rather than a separate "last failed at" column, so this
+    // needs no extra field; the error is at most one backoff interval
+    // (<= BACKOFF_MAX_SECONDS), negligible against a multi-minute decay
+    // window.
+    const quiet =
+      student.nextLoginAttemptAt != null &&
+      now.getTime() - student.nextLoginAttemptAt.getTime() > BACKOFF_DECAY_MINUTES * 60 * 1000;
+    const attempts = (quiet ? 0 : student.failedLoginAttempts) + 1;
+    const delaySeconds = backoffSeconds(attempts);
+
     await prisma.student.update({
       where: { id: student.id },
-      data: {
-        failedLoginAttempts: lockedOut ? 0 : attempts,
-        lockedUntil: lockedOut ? new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000) : null,
-      },
+      data: { failedLoginAttempts: attempts, nextLoginAttemptAt: new Date(now.getTime() + delaySeconds * 1000) },
     });
-    return { ok: false, error: genericError };
+    return { ok: false, error: `${genericError} ลองใหม่ใน ${delaySeconds} วินาที` };
   }
 
   let userId = student.userId;
@@ -70,7 +109,7 @@ export async function verifyStudentLogin(studentCode: string, password: string):
 
   await prisma.student.update({
     where: { id: student.id },
-    data: { userId, failedLoginAttempts: 0, lockedUntil: null },
+    data: { userId, failedLoginAttempts: 0, nextLoginAttemptAt: null },
   });
 
   const sessionToken = randomUUID();

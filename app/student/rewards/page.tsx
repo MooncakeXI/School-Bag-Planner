@@ -2,8 +2,7 @@ import { requireActor } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { balance } from "@/lib/points";
 import { schoolDateToUtcMidnight, schoolToday } from "@/lib/time";
-import { cn } from "@/lib/utils";
-import { redeemAction } from "./actions";
+import { RedeemButton } from "@/components/redeem-button";
 
 export default async function StudentRewardsPage() {
   const actor = await requireActor();
@@ -41,7 +40,8 @@ export default async function StudentRewardsPage() {
       ) : (
         <ul className="flex flex-col gap-2.5">
           {rewards.map((reward) => {
-            const canAfford = points >= reward.cost;
+            const outOfStock = reward.stock !== null && reward.stock <= 0;
+            const canAfford = points >= reward.cost && !outOfStock;
             return (
               <li key={reward.id}>
                 <div className="flex items-center gap-3.5 rounded-2xl border border-border bg-card p-3.5">
@@ -49,19 +49,7 @@ export default async function StudentRewardsPage() {
                     <p className="text-base font-semibold">{reward.name}</p>
                     <p className="mt-0.5 text-sm text-warning">{reward.cost} คะแนน</p>
                   </div>
-                  <form action={redeemAction}>
-                    <input type="hidden" name="rewardId" value={reward.id} />
-                    <button
-                      type="submit"
-                      disabled={!canAfford}
-                      className={cn(
-                        "h-[46px] min-w-[84px] shrink-0 rounded-2xl px-5 text-[15px] font-semibold disabled:cursor-default",
-                        canAfford ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {canAfford ? "แลก" : "ยังไม่พอ"}
-                    </button>
-                  </form>
+                  <RedeemButton rewardId={reward.id} canAfford={canAfford} outOfStock={outOfStock} />
                 </div>
               </li>
             );

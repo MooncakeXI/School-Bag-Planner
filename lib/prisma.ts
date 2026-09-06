@@ -11,8 +11,14 @@ function createClient() {
 }
 
 // Reuse the client across Next.js dev HMR reloads to avoid exhausting the
-// connection pool.
-export const prisma = globalThis.__prisma ?? createClient();
+// connection pool. A Prisma client generated before the Homework model has
+// no `homework` delegate, though; discard that stale HMR singleton after a
+// schema/client regeneration instead of serving a runtime TypeError.
+function hasCurrentSchema(client: PrismaClient | undefined): client is PrismaClient {
+  return client !== undefined && "homework" in client;
+}
+
+export const prisma = hasCurrentSchema(globalThis.__prisma) ? globalThis.__prisma : createClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalThis.__prisma = prisma;

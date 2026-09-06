@@ -1,49 +1,47 @@
-import type { ExceptionKind, Weekday } from "@prisma/client";
+import type { ExceptionKind } from "@prisma/client";
 import { prisma } from "./prisma";
 import { can, type Resource } from "./policy";
 import { ForbiddenError } from "./errors";
-import { schoolDateToUtcMidnight, type SchoolDate } from "./time";
+import { termFor } from "./terms";
+import { schoolDateToUtcMidnight, schoolToday, type SchoolDate } from "./time";
 import type { Actor } from "./actor";
 
-export async function listTimetableSlots(actor: Actor, classroomId: string) {
+// Read-only: the timetable itself has no teacher-facing edit path (see
+// app/teacher/timetable/page.tsx) — a real school's actual weekly schedule
+// is set up out-of-band (imported/seeded, same as classroom creation and
+// prisma/seed.ts's own generation) and, day to day, deviates from it only
+// through a ScheduleException (holiday/swap/exam — edit_exceptions below),
+// never by rewriting the base TimetableSlot rows at runtime. There used to
+// be a setTimetableSlot/clearTimetableSlot pair behind a per-cell dropdown
+// on that page; removed outright (not left "half-alive" with no caller)
+// once it was raised that letting any teacher freely rewrite the shared
+// class schedule doesn't match how a real school actually operates one.
+
+/**
+ * A timetable is always resolved *within* a term (see prisma/schema.prisma's
+ * TimetableSlot comment). The teacher UI doesn't expose a term picker today,
+ * so callers may omit termId and get "the term covering today" for this
+ * classroom's school — the only term that matters until a multi-term picker
+ * exists.
+ */
+async function resolveTermId(classroomId: string, explicitTermId?: string): Promise<string | null> {
+  if (explicitTermId) return explicitTermId;
+  const classroom = await prisma.classroom.findUniqueOrThrow({ where: { id: classroomId }, select: { schoolId: true } });
+  const term = await termFor(classroom.schoolId, schoolToday());
+  return term?.id ?? null;
+}
+
+export async function listTimetableSlots(actor: Actor, classroomId: string, termId?: string) {
   if (!(await can(actor, "view_timetable", { type: "classroom", classroomId }))) {
     throw new ForbiddenError("view_timetable", { type: "classroom", classroomId });
   }
+  const resolvedTermId = await resolveTermId(classroomId, termId);
+  if (!resolvedTermId) return [];
   return prisma.timetableSlot.findMany({
-    where: { classroomId },
+    where: { termId: resolvedTermId, classroomId },
     include: { subject: true },
     orderBy: [{ weekday: "asc" }, { period: "asc" }],
   });
-}
-
-export async function setTimetableSlot(
-  actor: Actor,
-  params: { classroomId: string; subjectId: string; weekday: Weekday; period: number },
-) {
-  if (!(await can(actor, "edit_timetable", { type: "classroom", classroomId: params.classroomId }))) {
-    throw new ForbiddenError("edit_timetable", { type: "classroom", classroomId: params.classroomId });
-  }
-  return prisma.timetableSlot.upsert({
-    where: {
-      classroomId_weekday_period: {
-        classroomId: params.classroomId,
-        weekday: params.weekday,
-        period: params.period,
-      },
-    },
-    create: params,
-    update: { subjectId: params.subjectId },
-  });
-}
-
-export async function clearTimetableSlot(
-  actor: Actor,
-  params: { classroomId: string; weekday: Weekday; period: number },
-) {
-  if (!(await can(actor, "edit_timetable", { type: "classroom", classroomId: params.classroomId }))) {
-    throw new ForbiddenError("edit_timetable", { type: "classroom", classroomId: params.classroomId });
-  }
-  await prisma.timetableSlot.deleteMany({ where: params });
 }
 
 export async function listScheduleExceptions(
@@ -84,6 +82,12 @@ export async function createScheduleException(
     : { type: "school", schoolId: params.schoolId };
   if (!(await can(actor, "edit_exceptions", resource))) {
     throw new ForbiddenError("edit_exceptions", resource);
+  }
+  if (params.subjectId) {
+    const subject = await prisma.subject.findUniqueOrThrow({ where: { id: params.subjectId }, select: { archivedAt: true } });
+    if (subject.archivedAt) {
+      throw new Error("This subject has been archived and can no longer be used in a new schedule exception.");
+    }
   }
   return prisma.scheduleException.create({
     data: {

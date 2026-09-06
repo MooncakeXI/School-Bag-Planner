@@ -13,9 +13,8 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-// Real Web Push, per the design reference's evening lock-screen reminder —
-// service worker (public/sw.js) + VAPID, sent by lib/push.ts on an external
-// 18:30/20:00 schedule (app/api/cron/reminders/route.ts).
+// One subscription covers both packing and approaching-homework-deadline
+// reminders. The service worker (public/sw.js) displays the common payload.
 export function NotificationOptIn() {
   const [status, setStatus] = useState<"idle" | "requesting" | "on" | "error">("idle");
 
@@ -59,7 +58,7 @@ export function NotificationOptIn() {
       className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-sm font-medium text-muted-foreground disabled:opacity-60"
     >
       <Bell className="size-4" />
-      {status === "error" ? "เปิดการแจ้งเตือนไม่สำเร็จ ลองใหม่" : "เปิดการแจ้งเตือนตอนเย็น"}
+      {status === "error" ? "เปิดการแจ้งเตือนไม่สำเร็จ ลองใหม่" : "เปิดการแจ้งเตือน"}
     </button>
   );
 }

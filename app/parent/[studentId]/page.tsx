@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { ShieldCheck } from "lucide-react";
 import { requireActor } from "@/lib/session";
 import { can } from "@/lib/policy";
 import { prisma } from "@/lib/prisma";
@@ -30,6 +32,13 @@ export default async function ParentChildPage({
         weekHref={`/parent/${studentId}/week`}
       />
       <TomorrowView studentId={studentId} studentName={student.name} readOnly />
+      <Link
+        href={`/parent/${studentId}/consent`}
+        className="mx-auto flex w-full max-w-lg items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
+      >
+        <ShieldCheck className="size-4 shrink-0" />
+        ความยินยอมถ่ายรูป
+      </Link>
     </main>
   );
 }

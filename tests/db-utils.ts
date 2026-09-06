@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
 
 const TABLES = [
+  "consents",
+  "homework_reminders",
+  "homeworks",
   "push_subscriptions",
   "redemptions",
   "rewards",

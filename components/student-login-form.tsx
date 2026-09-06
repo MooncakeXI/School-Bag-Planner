@@ -27,6 +27,8 @@ export function StudentLoginForm() {
           maxLength={STUDENT_CODE_LENGTH}
           autoComplete="off"
           required
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby={state.error ? "student-login-error" : undefined}
           className="h-14 w-full rounded-2xl border border-input bg-background px-4 text-center font-heading text-2xl tracking-[0.3em] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </div>
@@ -43,12 +45,18 @@ export function StudentLoginForm() {
           maxLength={STUDENT_PASSWORD_LENGTH}
           autoComplete="off"
           required
+          aria-invalid={state.error ? true : undefined}
+          aria-describedby={state.error ? "student-login-error" : undefined}
           className="h-14 w-full rounded-2xl border border-input bg-background px-4 text-center font-heading text-2xl tracking-[0.3em] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         />
       </div>
-      {state.error && <p className="text-center text-sm text-destructive">{state.error}</p>}
+      {state.error && (
+        <p id="student-login-error" role="alert" className="text-center text-sm text-destructive">
+          {state.error}
+        </p>
+      )}
       <Button type="submit" size="lg" disabled={pending} className="h-[52px] w-full rounded-2xl text-base font-semibold">
-        เข้าสู่ระบบ
+        {pending ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
       </Button>
     </form>
   );

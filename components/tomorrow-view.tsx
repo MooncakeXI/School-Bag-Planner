@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Check, PartyPopper } from "lucide-react";
-import { getPackingStatus } from "@/lib/packing";
-import { balance, computeStreak, POINTS_PER_COMPLETION } from "@/lib/points";
-import { schoolTomorrow, schoolToday, schoolDateToUtcMidnight, SCHOOL_TZ } from "@/lib/time";
+import { getPackingStatus, packingFocusDate } from "@/lib/packing";
+import { schoolSettingsForStudent } from "@/lib/school-settings";
+import { balance, computeStreak } from "@/lib/points";
+import { schoolToday, schoolDateToUtcMidnight, SCHOOL_TZ } from "@/lib/time";
 import { SubjectChip } from "@/components/subject-chip";
 import { cn } from "@/lib/utils";
 
@@ -35,14 +36,16 @@ export async function TomorrowView({
   studentName: string;
   readOnly?: boolean;
 }) {
-  const date = schoolTomorrow();
+  const settings = await schoolSettingsForStudent(studentId);
+  const date = packingFocusDate(settings);
+  const isToday = date === schoolToday();
   const status = await getPackingStatus(studentId, date);
 
   const header = (
     <header>
       <p className="text-sm text-muted-foreground">สวัสดี {studentName}</p>
       <h1 className="mt-0.5 font-heading text-2xl font-semibold leading-tight">
-        พรุ่งนี้ {DATE_FMT.format(schoolDateToUtcMidnight(date))}
+        {isToday ? "วันนี้" : "พรุ่งนี้"} {DATE_FMT.format(schoolDateToUtcMidnight(date))}
       </h1>
     </header>
   );
@@ -53,7 +56,7 @@ export async function TomorrowView({
         {header}
         <div className="flex flex-col items-center gap-3 rounded-3xl bg-success/15 py-10 text-center">
           <PartyPopper className="size-10 text-success" />
-          <p className="font-heading text-2xl font-semibold text-success">พรุ่งนี้ไม่มีเรียน</p>
+          <p className="font-heading text-2xl font-semibold text-success">{isToday ? "วันนี้ไม่มีเรียน" : "พรุ่งนี้ไม่มีเรียน"}</p>
         </div>
       </div>
     );
@@ -64,7 +67,7 @@ export async function TomorrowView({
       <div className="flex flex-col gap-5 max-w-lg mx-auto w-full">
         {header}
         <div className="rounded-3xl bg-muted py-10 text-center text-lg text-muted-foreground">
-          ยังไม่มีของที่ต้องเตรียมสำหรับพรุ่งนี้
+          {isToday ? "ยังไม่มีของที่ต้องเตรียมสำหรับวันนี้" : "ยังไม่มีของที่ต้องเตรียมสำหรับพรุ่งนี้"}
         </div>
       </div>
     );
@@ -79,11 +82,11 @@ export async function TomorrowView({
         </div>
         <div>
           <p className="font-heading text-3xl font-semibold">จัดกระเป๋าครบแล้ว</p>
-          <p className="mt-2 text-base opacity-90">พรุ่งนี้ไม่ลืมอะไรแน่นอน</p>
+          <p className="mt-2 text-base opacity-90">{isToday ? "วันนี้ไม่ลืมอะไรแน่นอน" : "พรุ่งนี้ไม่ลืมอะไรแน่นอน"}</p>
         </div>
         <div className="flex w-full divide-x divide-white/20 rounded-2xl bg-white/10 p-5">
           <div className="flex-1">
-            <p className="font-heading text-2xl font-semibold">+{POINTS_PER_COMPLETION}</p>
+            <p className="font-heading text-2xl font-semibold">+{status.pointsPerCompletion}</p>
             <p className="mt-0.5 text-sm opacity-80">คะแนนวันนี้</p>
           </div>
           <div className="flex-1">

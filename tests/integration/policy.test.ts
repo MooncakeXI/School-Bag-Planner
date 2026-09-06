@@ -11,7 +11,7 @@ async function makeUser(email: string) {
 async function seedSchoolWithPeople(label: string) {
   const school = await prisma.school.create({ data: { name: `School ${label}` } });
   const classroom = await prisma.classroom.create({ data: { schoolId: school.id, name: `Room ${label}` } });
-  const subject = await prisma.subject.create({ data: { name: `Subject ${label}` } });
+  const subject = await prisma.subject.create({ data: { schoolId: school.id, name: `Subject ${label}` } });
 
   const teacherUser = await makeUser(`teacher-${label}@example.com`);
   const teacher = await prisma.teacher.create({
@@ -47,7 +47,6 @@ describe("can() policy matrix", () => {
   it("grants a teacher view/edit on their own classroom and its school", async () => {
     const a = await seedSchoolWithPeople("A");
     expect(await can(a.teacherActor, "view_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(true);
-    expect(await can(a.teacherActor, "edit_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(true);
     expect(await can(a.teacherActor, "edit_exceptions", { type: "school", schoolId: a.school.id })).toBe(true);
   });
 
@@ -56,7 +55,6 @@ describe("can() policy matrix", () => {
     const b = await seedSchoolWithPeople("B");
 
     expect(await can(a.teacherActor, "view_timetable", { type: "classroom", classroomId: b.classroom.id })).toBe(false);
-    expect(await can(a.teacherActor, "edit_timetable", { type: "classroom", classroomId: b.classroom.id })).toBe(false);
     expect(await can(a.teacherActor, "view_exceptions", { type: "classroom", classroomId: b.classroom.id })).toBe(false);
     expect(await can(a.teacherActor, "edit_exceptions", { type: "school", schoolId: b.school.id })).toBe(false);
     expect(await can(a.teacherActor, "view_student", { type: "student", studentId: b.studentId })).toBe(false);
@@ -67,7 +65,6 @@ describe("can() policy matrix", () => {
     const b = await seedSchoolWithPeople("B");
 
     expect(await can(a.studentActor, "view_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(true);
-    expect(await can(a.studentActor, "edit_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(false);
     expect(await can(a.studentActor, "view_timetable", { type: "classroom", classroomId: b.classroom.id })).toBe(false);
     expect(await can(a.studentActor, "view_student", { type: "student", studentId: a.studentId })).toBe(true);
     expect(await can(a.studentActor, "view_student", { type: "student", studentId: b.studentId })).toBe(false);
@@ -78,7 +75,6 @@ describe("can() policy matrix", () => {
     const b = await seedSchoolWithPeople("B");
 
     expect(await can(a.parentActor, "view_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(true);
-    expect(await can(a.parentActor, "edit_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(false);
     expect(await can(a.parentActor, "view_student", { type: "student", studentId: a.studentId })).toBe(true);
     expect(await can(a.parentActor, "view_timetable", { type: "classroom", classroomId: b.classroom.id })).toBe(false);
     expect(await can(a.parentActor, "view_student", { type: "student", studentId: b.studentId })).toBe(false);
@@ -89,7 +85,6 @@ describe("can() policy matrix", () => {
     const nobody: Actor = { userId: "unaffiliated-user", teacherId: null, parentId: null, studentId: null };
 
     expect(await can(nobody, "view_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(false);
-    expect(await can(nobody, "edit_timetable", { type: "classroom", classroomId: a.classroom.id })).toBe(false);
     expect(await can(nobody, "view_student", { type: "student", studentId: a.studentId })).toBe(false);
     expect(await can(nobody, "edit_exceptions", { type: "school", schoolId: a.school.id })).toBe(false);
   });

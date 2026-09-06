@@ -62,6 +62,11 @@ model Session {
   @@map("sessions")
 }
 
+// Required by @auth/prisma-adapter's expected shape; genuinely unused today
+// since no magic-link/email provider is configured (Google OAuth + the
+// student code+PIN path, ARCHITECTURE.md §3.1/§5, are the only two logins).
+// Keep it — the adapter expects this table to exist — don't go looking for
+// callers that write to it.
 model VerificationToken {
   identifier String
   token      String
@@ -121,13 +126,48 @@ enum RedemptionStatus {
   FULFILLED
 }
 
+// Only one scope exists today (photo capture during packing scans), but
+// consent is modeled per-scope from the start rather than as a single
+// blanket flag, since a real PDPA lawful-basis record is inherently
+// purpose-specific — a family consenting to packing photos hasn't thereby
+// consented to anything else the app might someday ask for separately.
+enum ConsentScope {
+  PHOTO_CAPTURE
+}
+
+enum ConsentMethod {
+  ONLINE
+  PAPER
+}
+
 model School {
   id   String @id @default(cuid())
   name String
 
+  // Per-school anti-cheat/points tuning (CLAUDE.md "Anti-cheat"). No admin
+  // UI yet — same out-of-band precedent as Term (§7.20/ARCHITECTURE.md
+  // §10): edited via script/Prisma Studio, defaults match what was
+  // previously hardcoded (sessionTtlMinutes excepted — see below).
+  packingWindowStartHour Int @default(18) // 18:00
+  packingWindowEndHour   Int @default(24) // through 23:59:59
+  // Many Thai families pack the bag the morning of, not the night before —
+  // a second, independent window for that. Minutes-since-midnight (not an
+  // hour, like the evening window above) because 07:30 needs half-hour
+  // precision: 300 = 05:00, 450 = 07:30. A scan in this window targets
+  // *today* (lib/packing.ts's resolveOpenWindow), never tomorrow.
+  morningWindowStartMinute Int @default(300)
+  morningWindowEndMinute   Int @default(450)
+  // Was a hardcoded 10; raised to 20 by default because a 10-minute window
+  // punished slow honest kids (searching the house for items) far more than
+  // it ever caught a cheater (who finishes in well under a minute either way).
+  sessionTtlMinutes      Int @default(20)
+  pointsPerCompletion    Int @default(20)
+
   classrooms         Classroom[]
   scheduleExceptions ScheduleException[]
   rewards            Reward[]
+  subjects           Subject[]
+  terms              Term[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -136,20 +176,30 @@ model School {
 }
 
 model Classroom {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   schoolId String
   name     String // e.g. "ป.4/1"
+
+  // ครูประจำชั้น — the one teacher (of possibly several subject teachers
+  // here) who manages guardianships and student login credentials, and
+  // sees every subject's items, not just the one(s) they teach. Nullable:
+  // a classroom may not have one assigned yet. SetNull, not Cascade — a
+  // teacher leaving doesn't delete the classroom.
+  homeroomTeacherId String?
+  homeroomTeacher   Teacher? @relation("HomeroomTeacher", fields: [homeroomTeacherId], references: [id], onDelete: SetNull)
 
   school               School               @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   enrollments          Enrollment[]
   teachingAssignments  TeachingAssignment[]
   timetableSlots       TimetableSlot[]
   scheduleExceptions   ScheduleException[]
+  homework             Homework[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([schoolId])
+  @@index([homeroomTeacherId])
   @@map("classrooms")
 }
 
@@ -162,12 +212,18 @@ model Student {
   // password pair (see lib/roster.ts's issueStudentCredentials) instead of
   // Google sign-in. passwordHash is bcrypt, never the plaintext; the
   // plaintext is shown to the teacher exactly once, at issuance, and never
-  // stored. failedLoginAttempts/lockedUntil are a minimal brute-force guard
-  // — this is a credential for a minor (CLAUDE.md "Privacy").
-  studentCode         String?   @unique
+  // stored. failedLoginAttempts/nextLoginAttemptAt back the exponential
+  // backoff in lib/student-auth.ts — this is a credential for a minor
+  // (CLAUDE.md "Privacy"), and the classroom-scale threat model is a
+  // classmate mashing a shared code, not a remote attacker, so the design
+  // deliberately never locks the account itself (see that file's comment):
+  // a correct password always succeeds immediately regardless of either
+  // field's state, and only a wrong one is throttled, growing 1s/2s/4s/...
+  // capped at 60s, decaying back down after a quiet period.
+  studentCode         String?    @unique
   passwordHash        String?
-  failedLoginAttempts Int       @default(0)
-  lockedUntil         DateTime?
+  failedLoginAttempts Int        @default(0)
+  nextLoginAttemptAt  DateTime?
 
   user              User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
   enrollments       Enrollment[]
@@ -177,11 +233,59 @@ model Student {
   pointLedger       PointLedger[]
   redemptions       Redemption[]
   pushSubscriptions PushSubscription[]
+  homeworkReminders HomeworkReminder[]
+  consents          Consent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("students")
+}
+
+// PDPA lawful-basis record (CLAUDE.md "Privacy") — a child under 10 needs
+// guardian consent specifically, and Thai PDPA requires a lawful basis for
+// any data collection, photos of minors very much included. This was a real
+// gap: the photo-capture pipeline (lib/packing.ts's savePhoto, §7.8) has
+// been running since Phase 2 with nothing checking for consent at all.
+//
+// "Active" is intentionally not just "a row exists" — see
+// lib/consent.ts's hasActiveConsent, the only place that's allowed to
+// answer that question. A row is active only when `revokedAt` is null AND
+// `version` matches the scope's current version, so a revised privacy
+// notice invalidates every prior consent without deleting the historical
+// record: re-granting always inserts a new row rather than mutating an old
+// one (append-only, same spirit as invariant 4's ledger, for the same
+// reason — a consent record's whole point is being an honest history of
+// what was agreed to and when).
+//
+// grantedByParentId/recordedByUserId are loose references, not Prisma
+// relations — same pattern as PointLedger.actorUserId (invariant 7's audit
+// trail), deliberately not an FK so this record's history survives the
+// referenced Parent/User row's own lifecycle untouched.
+model Consent {
+  id        String        @id @default(cuid())
+  studentId String
+  scope     ConsentScope
+  version   String
+  method    ConsentMethod
+
+  // Set for method: ONLINE — the parent granting consent for their own
+  // child through the parent-facing consent screen.
+  grantedByParentId String?
+  // Set for method: PAPER — the homeroom teacher who recorded a signed
+  // paper consent form on behalf of a family that never uses the app.
+  recordedByUserId String?
+
+  grantedAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, scope])
+  @@map("consents")
 }
 
 // A student's classroom membership over time. "Active" enrollment for a date
@@ -248,6 +352,7 @@ model Teacher {
 
   user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
   teachingAssignments TeachingAssignment[]
+  homeroomClassrooms  Classroom[]          @relation("HomeroomTeacher")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -274,27 +379,44 @@ model TeachingAssignment {
   @@map("teaching_assignments")
 }
 
+// Curriculum catalog, scoped per school (Subjects/SubjectItems used to be
+// treated as one shared cross-school catalog — see CLAUDE.md/ARCHITECTURE.md
+// "Authorization" — but Subject cascades to TimetableSlot, and SubjectItem
+// cascades to ItemCopy which cascades to PackingCheck, so an unscoped
+// catalog meant any teacher at any school could delete another school's
+// entire timetable and packing history. schoolId is required, not optional.
 model Subject {
-  id   String @id @default(cuid())
-  name String // e.g. "คณิตศาสตร์"
+  id         String    @id @default(cuid())
+  schoolId   String
+  name       String // e.g. "คณิตศาสตร์"
+  archivedAt DateTime? // hidden from the catalog UI and new timetable slots; existing references still resolve
 
-  subjectItems        SubjectItem[]
+  school               School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subjectItems         SubjectItem[]
   timetableSlots       TimetableSlot[]
   teachingAssignments  TeachingAssignment[]
   scheduleExceptions   ScheduleException[]
+  homework             Homework[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([schoolId])
   @@map("subjects")
 }
 
 // The abstract item required by a subject, e.g. "Math P.4 workbook".
 // Invariant 1: never merge this with ItemCopy.
 model SubjectItem {
-  id        String @id @default(cuid())
-  subjectId String
-  name      String // e.g. "แบบฝึกหัดคณิตศาสตร์ ป.4"
+  id         String    @id @default(cuid())
+  subjectId  String
+  name       String // e.g. "แบบฝึกหัดคณิตศาสตร์ ป.4"
+  archivedAt DateTime? // hidden from the catalog UI and new ItemCopy creation; existing ItemCopy rows still resolve (see ARCHITECTURE.md)
+  // True for this subject's exam-day items (2B pencil, eraser, ruler...),
+  // false for its normal items (the workbook). requiredItemsFor selects
+  // forExam items instead of normal ones on an exam-day slot for this
+  // subject, never both — see lib/required-items.ts and ARCHITECTURE.md §3.3.
+  forExam    Boolean   @default(false)
 
   subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   itemCopies ItemCopy[]
@@ -354,22 +476,66 @@ model QRCode {
   @@map("qr_codes")
 }
 
-// The recurring weekly slot: this classroom has this subject on this weekday/period.
+// One academic term for a school (e.g. "ภาคเรียนที่ 1/2569"). Scopes
+// TimetableSlot the same way Enrollment scopes a Student's classroom over
+// time — see TimetableSlot's own comment for why this exists. Terms for one
+// school must not overlap; Postgres has no simple non-overlapping-range
+// constraint without an exclusion constraint using btree_gist, which this
+// project doesn't otherwise need, so this is enforced in application code
+// instead (lib/terms.ts's assertNoOverlap, run by createTerm).
+model Term {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String // e.g. "ภาคเรียนที่ 1/2569"
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  timetableSlots TimetableSlot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId, startDate])
+  @@map("terms")
+}
+
+// The recurring weekly slot: this classroom has this subject on this
+// weekday/period, *within one term*. Scoped to a Term (not a bare
+// weekday+period) because a timetable is authored per-term and changes as a
+// whole at term boundaries, not slot-by-slot on arbitrary dates — the same
+// reasoning that makes Enrollment date-ranged rather than a bare
+// classroomId on Student. Before this scoping, requiredItemsFor() always
+// read whatever the *current* timetable said, so editing term 2's timetable
+// silently rewrote the answer for every already-past term-1 date — a real
+// modelling bug (there was no way to ask "what was this child supposed to
+// bring on that Tuesday" and get a historically-correct answer). termId
+// (not effectiveFrom/effectiveTo on the slot itself) was chosen because it
+// matches that reality directly: one canonical set of slots per term, and
+// the query "which slots are in effect on date D" is just "resolve the term
+// covering D, then look up its slots" — the same two-step shape
+// enrollmentFor(date) already uses. Per-slot date ranges would let
+// individual slots change on arbitrary dates independent of any term
+// boundary, which nothing in this domain actually does, and would need
+// range-overlap validation per slot instead of reusing Term's.
 model TimetableSlot {
   id          String  @id @default(cuid())
+  termId      String
   classroomId String
   subjectId   String
   weekday     Weekday
   period      Int // 1-based teaching period of the day
 
+  term      Term      @relation(fields: [termId], references: [id], onDelete: Cascade)
   classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
   subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([classroomId, weekday, period])
+  @@unique([termId, classroomId, weekday, period])
   @@index([classroomId])
+  @@index([termId])
   @@map("timetable_slots")
 }
 
@@ -417,6 +583,20 @@ model PackingSession {
   startedAt     DateTime             @default(now())
   completedAt   DateTime?
   pointsAwarded Boolean              @default(false)
+  // False when this session's checks include ones carried over from an
+  // earlier session that expired for the same forDate (lib/packing.ts's
+  // getOrStartSession) — the TTL still resets the clock, but no longer
+  // discards progress. Surfaced to the teacher on the morning spot-check
+  // page as a signal, not a verdict — a human judges whether it matters.
+  continuous    Boolean              @default(true)
+  // Null for the normal, student-run flow. Set to the homeroom teacher's
+  // userId only for lib/packing.ts's recordTeacherScan — the teacher-run
+  // packing flow for students with no phone/camera at home in the evening.
+  // Same audit reasoning as invariant 7's PointLedger.actorUserId: a loose
+  // reference, not a Prisma relation (this session's history must survive
+  // that User row's own lifecycle untouched), and the presence of a value
+  // is itself the record of "an adult, not the student, drove this scan."
+  startedByUserId String?
 
   student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
   checks  PackingCheck[]
@@ -449,7 +629,11 @@ model PackingCheck {
 
 // Invariant 4: append-only, balance is SUM(delta). actorUserId is the audit
 // trail invariant 7 requires for teacher overrides (MORNING_CHECK_FAIL,
-// MANUAL_ADJUST) — null means system-awarded (PACKING_COMPLETE).
+// MANUAL_ADJUST) — null means system-awarded (PACKING_COMPLETE). note is
+// freeform text and only ever set alongside MANUAL_ADJUST — lib/points.ts's
+// manualAdjustPoints requires a homeroom teacher to state a reason before a
+// correction is ever recorded; every other reason has no human-authored
+// text and leaves this null.
 model PointLedger {
   id          String      @id @default(cuid())
   studentId   String
@@ -457,6 +641,7 @@ model PointLedger {
   reason      PointReason
   refId       String?
   actorUserId String?
+  note        String?
   createdAt   DateTime    @default(now())
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -470,6 +655,7 @@ model Reward {
   schoolId String
   name     String
   cost     Int
+  stock    Int? // null = unlimited; decremented inside redeem()'s own transaction, never below 0
   active   Boolean @default(true)
 
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
@@ -493,7 +679,13 @@ model Redemption {
   fulfilledByTeacherId String?
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  reward  Reward  @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: a PointLedger REDEMPTION row's refId points at
+  // this Redemption (invariant 4 — the ledger is the auditable record of
+  // every point change), and PointLedger only cascades from Student, not
+  // Reward. Cascading here would silently leave that refId dangling.
+  // lib/rewards.ts's deleteReward already refuses to delete a Reward with
+  // any Redemption on it; this is the database enforcing the same rule.
+  reward  Reward  @relation(fields: [rewardId], references: [id], onDelete: Restrict)
 
   @@index([studentId])
   @@index([rewardId])
@@ -512,4 +704,51 @@ model PushSubscription {
 
   @@index([studentId])
   @@map("push_subscriptions")
+}
+
+// A teacher posts homework to one subject in one classroom. Subject is
+// required (rather than a free-text label) so the same relationship-based
+// authorization used for classroom teaching assignments can scope who may
+// create it. postedByUserId is intentionally a loose audit reference: a
+// homework notice should still retain who posted it if a teacher profile is
+// later removed, matching PointLedger.actorUserId's history-preserving shape.
+model Homework {
+  id             String   @id @default(cuid())
+  classroomId    String
+  subjectId      String
+  description    String   @db.Text
+  deadlineAt     DateTime
+  postedByUserId String
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  // Restrict protects existing homework/history if someone attempts a hard
+  // subject deletion. Archived subjects may still legitimately appear here.
+  subject   Subject   @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  reminders HomeworkReminder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([classroomId, deadlineAt])
+  @@index([subjectId])
+  @@map("homeworks")
+}
+
+// A delivery receipt makes an hourly/recurring reminder job idempotent: each
+// student receives the approaching-deadline reminder at most once per
+// homework, even if the scheduler retries or runs more than once in its
+// 24-hour notice window. The row is only retained after at least one push
+// endpoint accepts the notification (see lib/push.ts).
+model HomeworkReminder {
+  id         String   @id @default(cuid())
+  homeworkId String
+  studentId  String
+  sentAt     DateTime @default(now())
+
+  homework Homework @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([homeworkId, studentId])
+  @@index([studentId])
+  @@map("homework_reminders")
 }

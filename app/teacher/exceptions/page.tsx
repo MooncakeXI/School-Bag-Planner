@@ -1,17 +1,19 @@
-import Link from "next/link";
 import { DateTime } from "luxon";
-import { Trash2 } from "lucide-react";
+import { Trash2, CalendarOff, Repeat, PencilLine, Ban } from "lucide-react";
 import { requireActor } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { visibleClassroomWhere } from "@/lib/policy";
 import { listScheduleExceptions } from "@/lib/timetable";
 import { schoolToday } from "@/lib/time";
-import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/status-badge";
+import { PageHeader } from "@/components/page-header";
+import { ClassroomChipTabs } from "@/components/classroom-chip-tabs";
+import { ListGroup, ListRow } from "@/components/ios-list";
+import { RowIcon } from "@/components/row-icon";
 import { createExceptionAction, deleteExceptionAction } from "./actions";
 
 const KIND_LABEL: Record<string, string> = {
@@ -26,6 +28,13 @@ const KIND_TONE = {
   PERIOD_SWAP: "info",
   EXAM: "warning",
   CANCELLED_PERIOD: "neutral",
+} as const;
+
+const KIND_ICON = {
+  HOLIDAY: CalendarOff,
+  PERIOD_SWAP: Repeat,
+  EXAM: PencilLine,
+  CANCELLED_PERIOD: Ban,
 } as const;
 
 export default async function TeacherExceptionsPage({
@@ -53,29 +62,22 @@ export default async function TeacherExceptionsPage({
 
   const [exceptions, subjects] = await Promise.all([
     listScheduleExceptions(actor, classroom.id, { from: today, to }),
-    prisma.subject.findMany({ orderBy: { name: "asc" } }),
+    // Scoped to this classroom's school; archived subjects excluded — an
+    // exception shouldn't be able to swap in a subject that's been retired.
+    prisma.subject.findMany({ where: { schoolId: classroom.schoolId, archivedAt: null }, orderBy: { name: "asc" } }),
   ]);
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
-      <h1 className="font-heading text-xl font-semibold">วันหยุด / สลับคาบ / วันสอบ</h1>
+      <PageHeader title="วันหยุด / สลับคาบ / วันสอบ" />
 
-      <div className="flex flex-wrap gap-1">
-        {classrooms.map((c) => (
-          <Link
-            key={c.id}
-            href={`/teacher/exceptions?classroomId=${c.id}`}
-            className={cn(
-              "rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors",
-              c.id === classroom.id ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {c.name}
-          </Link>
-        ))}
-      </div>
+      <ClassroomChipTabs
+        classrooms={classrooms}
+        activeId={classroom.id}
+        hrefFor={(id) => `/teacher/exceptions?classroomId=${id}`}
+      />
 
-      <Card>
+      <Card className="rounded-3xl">
         <CardHeader>
           <CardTitle className="text-base">เพิ่มรายการ</CardTitle>
         </CardHeader>
@@ -86,11 +88,11 @@ export default async function TeacherExceptionsPage({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="date">วันที่</Label>
-                <Input id="date" type="date" name="date" required />
+                <Input id="date" type="date" name="date" className="h-11" required />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="kind">ประเภท</Label>
-                <select id="kind" name="kind" className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                <select id="kind" name="kind" className="h-11 w-full rounded-xl border bg-background px-3 text-sm">
                   <option value="HOLIDAY">วันหยุด (ทั้งวัน)</option>
                   <option value="CANCELLED_PERIOD">งดคาบเรียน</option>
                   <option value="PERIOD_SWAP">สลับคาบ (เปลี่ยนวิชา)</option>
@@ -99,11 +101,11 @@ export default async function TeacherExceptionsPage({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="period">คาบที่ (ถ้ามี)</Label>
-                <Input id="period" type="number" name="period" min={1} max={8} />
+                <Input id="period" type="number" name="period" min={1} max={8} className="h-11" />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="subjectId">วิชาที่เปลี่ยนเป็น (ถ้ามี)</Label>
-                <select id="subjectId" name="subjectId" className="h-9 w-full rounded-md border bg-background px-3 text-sm">
+                <select id="subjectId" name="subjectId" className="h-11 w-full rounded-xl border bg-background px-3 text-sm">
                   <option value="">—</option>
                   {subjects.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -115,40 +117,48 @@ export default async function TeacherExceptionsPage({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="note">หมายเหตุ</Label>
-              <Input id="note" type="text" name="note" />
+              <Input id="note" type="text" name="note" className="h-11" />
             </div>
-            <Button type="submit" className="self-start">
+            <Button type="submit" className="min-h-11 self-start rounded-xl">
               เพิ่ม
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      <ul className="flex flex-col gap-2">
-        {exceptions.map((e) => (
-          <li key={e.id}>
-            <Card>
-              <CardContent className="flex items-center justify-between gap-2 py-3">
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="text-muted-foreground">
-                    {DateTime.fromJSDate(e.date, { zone: "utc" }).toFormat("d LLL yyyy")}
-                  </span>
-                  <StatusBadge tone={KIND_TONE[e.kind as keyof typeof KIND_TONE]}>{KIND_LABEL[e.kind]}</StatusBadge>
-                  {e.period && <span className="text-muted-foreground">คาบ {e.period}</span>}
-                  {e.note && <span className="text-muted-foreground">{e.note}</span>}
-                </div>
+      <ListGroup label="รายการที่จะถึง">
+        {exceptions.length === 0 ? (
+          <ListRow chevron={false}>
+            <span className="text-sm text-muted-foreground">ไม่มีรายการในช่วงนี้</span>
+          </ListRow>
+        ) : (
+          exceptions.map((e) => (
+            <ListRow
+              key={e.id}
+              chevron={false}
+              leading={<RowIcon icon={KIND_ICON[e.kind as keyof typeof KIND_ICON]} tone={KIND_TONE[e.kind as keyof typeof KIND_TONE]} />}
+              trailing={
                 <form action={deleteExceptionAction}>
                   <input type="hidden" name="exceptionId" value={e.id} />
                   <input type="hidden" name="classroomId" value={classroom.id} />
-                  <Button type="submit" variant="ghost" size="sm">
+                  <Button type="submit" variant="ghost" size="icon" className="size-9" aria-label="ลบรายการนี้">
                     <Trash2 className="size-4 text-destructive" />
                   </Button>
                 </form>
-              </CardContent>
-            </Card>
-          </li>
-        ))}
-      </ul>
+              }
+            >
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  {DateTime.fromJSDate(e.date, { zone: "utc" }).toFormat("d LLL yyyy")}
+                </span>
+                <StatusBadge tone={KIND_TONE[e.kind as keyof typeof KIND_TONE]}>{KIND_LABEL[e.kind]}</StatusBadge>
+                {e.period && <span className="text-muted-foreground">คาบ {e.period}</span>}
+                {e.note && <span className="text-muted-foreground">{e.note}</span>}
+              </div>
+            </ListRow>
+          ))
+        )}
+      </ListGroup>
     </div>
   );
 }

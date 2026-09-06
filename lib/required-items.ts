@@ -1,6 +1,7 @@
 import type { Weekday } from "@prisma/client";
 import { prisma } from "./prisma";
 import { applyExceptions, type EffectiveSlot } from "./schedule";
+import { termFor, termsCoveringRange, termForSchoolOn } from "./terms";
 import { addSchoolDays, schoolDateToUtcMidnight, weekdayOf, type SchoolDate } from "./time";
 
 export type RequiredItem = {
@@ -20,13 +21,22 @@ export type RequiredItemsResult = {
 
 export type WeekDayResult = RequiredItemsResult & { weekday: Weekday };
 
-type SubjectItemRow = { id: string; name: string; subjectId: string; subject: { name: string } };
+type SubjectItemRow = { id: string; name: string; subjectId: string; forExam: boolean; subject: { name: string } };
 
 /**
  * Turns one day's effective timetable slots into the packing list, dropping
  * anything the student has no tracked copy of, or whose copy is GRADING
  * (invariant 5). Pure — the DB fetches happen in the callers below, which
  * pre-filter `subjectItems` to the subjects actually in `effective`.
+ *
+ * A subject's items are partitioned by `forExam`: on a day where any of
+ * that subject's slots came from an EXAM exception (`source: "exam"`, see
+ * lib/schedule.ts), only its `forExam` items are required — 2B pencil,
+ * eraser, ruler, not the workbook, which the teacher does not want in the
+ * exam room. On any other day, it's the reverse: `forExam` items have no
+ * place in the regular list. Never both for the same subject on the same
+ * day — see ARCHITECTURE.md §3.3 for why this option was chosen over a
+ * school-level exam kit.
  */
 function assembleItems(
   effective: EffectiveSlot[],
@@ -34,6 +44,7 @@ function assembleItems(
   copyBySubjectItem: Map<string, string>,
 ): RequiredItem[] {
   const subjectIdsToday = new Set(effective.map((s) => s.subjectId));
+  const examSubjectIds = new Set(effective.filter((s) => s.source === "exam").map((s) => s.subjectId));
   const periodsBySubject = new Map<string, number[]>();
   for (const slot of effective) {
     const periods = periodsBySubject.get(slot.subjectId) ?? [];
@@ -44,6 +55,7 @@ function assembleItems(
   const items: RequiredItem[] = [];
   for (const si of subjectItems) {
     if (!subjectIdsToday.has(si.subjectId)) continue;
+    if (si.forExam !== examSubjectIds.has(si.subjectId)) continue;
     const itemCopyId = copyBySubjectItem.get(si.id);
     if (!itemCopyId) continue; // no tracked copy, or it's GRADING — nothing to tell the student to pack
 
@@ -84,16 +96,25 @@ export async function requiredItemsFor(studentId: string, date: SchoolDate): Pro
   const { schoolId } = enrollment.classroom;
   const weekday = weekdayOf(date);
 
-  const [slots, exceptions] = await Promise.all([
-    prisma.timetableSlot.findMany({
-      where: { classroomId, weekday },
-      select: { period: true, subjectId: true },
-    }),
+  // Invariant 6, extended: the timetable in effect on `date` is whichever
+  // Term covers it, not whatever the timetable currently says — otherwise
+  // editing a later term's timetable would silently rewrite the answer for
+  // an already-past date. See prisma/schema.prisma's Term/TimetableSlot
+  // comments and ARCHITECTURE.md §3.4.
+  const [term, exceptions] = await Promise.all([
+    termFor(schoolId, date),
     prisma.scheduleException.findMany({
       where: { date: target, OR: [{ classroomId }, { classroomId: null, schoolId }] },
       select: { kind: true, period: true, subjectId: true },
     }),
   ]);
+
+  const slots = term
+    ? await prisma.timetableSlot.findMany({
+        where: { termId: term.id, classroomId, weekday },
+        select: { period: true, subjectId: true },
+      })
+    : [];
 
   const isHoliday = exceptions.some((e) => e.kind === "HOLIDAY");
   const effective = applyExceptions(slots, exceptions);
@@ -106,7 +127,7 @@ export async function requiredItemsFor(studentId: string, date: SchoolDate): Pro
 
   const subjectItems = await prisma.subjectItem.findMany({
     where: { subjectId: { in: subjectIds } },
-    select: { id: true, name: true, subjectId: true, subject: { select: { name: true } } },
+    select: { id: true, name: true, subjectId: true, forExam: true, subject: { select: { name: true } } },
   });
 
   const itemCopies = await prisma.itemCopy.findMany({
@@ -144,10 +165,15 @@ export async function requiredItemsForWeek(studentId: string, weekStart: SchoolD
   const classroomIds = [...new Set(enrollments.map((e) => e.classroomId))];
   const schoolIds = [...new Set(enrollments.map((e) => e.classroom.schoolId))];
 
-  const [slots, exceptions] = await Promise.all([
+  const [terms, slots, exceptions] = await Promise.all([
+    // Fetched as a batch and resolved per-day below, the same way
+    // enrollmentFor(target) resolves each day's enrollment locally instead
+    // of querying per day — a week spanning a term boundary must resolve
+    // each day against whichever term actually covers it.
+    termsCoveringRange(schoolIds, rangeStart, rangeEnd),
     prisma.timetableSlot.findMany({
       where: { classroomId: { in: classroomIds } },
-      select: { classroomId: true, weekday: true, period: true, subjectId: true },
+      select: { termId: true, classroomId: true, weekday: true, period: true, subjectId: true },
     }),
     prisma.scheduleException.findMany({
       where: {
@@ -164,7 +190,10 @@ export async function requiredItemsForWeek(studentId: string, weekStart: SchoolD
     const enrollment = enrollmentFor(target);
     if (!enrollment) return { date, weekday, isHoliday: false, effective: [] as EffectiveSlot[] };
 
-    const daySlots = slots.filter((s) => s.classroomId === enrollment.classroomId && s.weekday === weekday);
+    const term = termForSchoolOn(terms, enrollment.classroom.schoolId, target);
+    const daySlots = term
+      ? slots.filter((s) => s.termId === term.id && s.classroomId === enrollment.classroomId && s.weekday === weekday)
+      : [];
     const dayExceptions = exceptions.filter((e) => {
       if (e.date.getTime() !== target.getTime()) return false;
       if (e.classroomId === enrollment.classroomId) return true;
@@ -179,7 +208,7 @@ export async function requiredItemsForWeek(studentId: string, weekStart: SchoolD
   const subjectItems = allSubjectIds.length
     ? await prisma.subjectItem.findMany({
         where: { subjectId: { in: allSubjectIds } },
-        select: { id: true, name: true, subjectId: true, subject: { select: { name: true } } },
+        select: { id: true, name: true, subjectId: true, forExam: true, subject: { select: { name: true } } },
       })
     : [];
 

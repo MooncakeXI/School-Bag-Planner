@@ -9,7 +9,11 @@ function describe(resource: Resource): string {
     case "school":
       return `school:${resource.schoolId}`;
     case "catalog":
-      return "catalog";
+      return `catalog in school:${resource.schoolId}`;
+    case "item_copy":
+      return `item_copy in classroom:${resource.classroomId} subject:${resource.subjectId}`;
+    case "homework":
+      return `homework in classroom:${resource.classroomId} subject:${resource.subjectId}`;
   }
 }
 

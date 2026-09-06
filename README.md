@@ -2,7 +2,9 @@
 
 A web app that helps Thai elementary school students pack their school bag correctly
 based on their class timetable. See [CLAUDE.md](./CLAUDE.md) for the full project brief,
-domain model, and invariants — read that before making changes.
+domain model, and invariants — read that before making changes. See
+[ARCHITECTURE.md](./ARCHITECTURE.md) for the deep technical reference: every database
+model, the authorization engine, the full API surface, and every `lib/` function.
 
 ## Setup
 

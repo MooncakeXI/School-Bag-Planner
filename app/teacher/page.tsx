@@ -1,10 +1,11 @@
-import Link from "next/link";
-import { Users, GraduationCap, ClipboardCheck, CalendarClock } from "lucide-react";
+import { Users, GraduationCap, ClipboardCheck, School, CalendarOff, Repeat, PencilLine, Ban } from "lucide-react";
 import { requireActor } from "@/lib/session";
 import { teacherDashboard } from "@/lib/dashboard";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
+import { PageHeader } from "@/components/page-header";
+import { ListGroup, ListRow } from "@/components/ios-list";
+import { RowIcon, type RowIconTone } from "@/components/row-icon";
 
 const TONES = {
   neutral: { chip: "bg-muted text-muted-foreground" },
@@ -19,6 +20,13 @@ const KIND_LABEL: Record<string, string> = {
   CANCELLED_PERIOD: "งดคาบเรียน",
 };
 
+const KIND_ICON: Record<string, { icon: typeof CalendarOff; tone: RowIconTone }> = {
+  HOLIDAY: { icon: CalendarOff, tone: "success" },
+  PERIOD_SWAP: { icon: Repeat, tone: "info" },
+  EXAM: { icon: PencilLine, tone: "warning" },
+  CANCELLED_PERIOD: { icon: Ban, tone: "neutral" },
+};
+
 const DATE_FMT = new Intl.DateTimeFormat("th-TH-u-ca-gregory", { day: "numeric", month: "short" });
 
 export default async function TeacherDashboardPage() {
@@ -27,26 +35,25 @@ export default async function TeacherDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <PageHeader title="ภาพรวม" />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard icon={Users} label="ห้องเรียนที่สอน" value={dashboard.classroomCount} tone="neutral" />
         <StatCard icon={GraduationCap} label="นักเรียนทั้งหมด" value={dashboard.studentCount} tone="success" />
         <StatCard icon={ClipboardCheck} label="กำลังตรวจ (GRADING)" value={dashboard.gradingCount} tone="warning" />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">วันนี้สอนอะไรบ้าง</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          {dashboard.todayByClassroom.length === 0 ? (
-            <p className="text-sm text-muted-foreground">ยังไม่มีห้องเรียนที่คุณสอน</p>
-          ) : (
-            dashboard.todayByClassroom.map((c) => (
-              <div key={c.classroomId} className="flex items-center justify-between gap-4 rounded-md border p-3">
-                <Link href={`/teacher/classrooms/${c.classroomId}`} className="font-medium hover:underline">
-                  {c.classroomName}
-                </Link>
-                {c.isHoliday ? (
+      <ListGroup label="วันนี้สอนอะไรบ้าง">
+        {dashboard.todayByClassroom.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-muted-foreground">ยังไม่มีห้องเรียนที่คุณสอน</p>
+        ) : (
+          dashboard.todayByClassroom.map((c) => (
+            <ListRow
+              key={c.classroomId}
+              href={`/teacher/classrooms/${c.classroomId}`}
+              leading={<RowIcon icon={School} tone="primary" />}
+              trailing={
+                c.isHoliday ? (
                   <StatusBadge tone="success">วันหยุด</StatusBadge>
                 ) : c.subjects.length === 0 ? (
                   <span className="text-sm text-muted-foreground">ไม่มีคาบวันนี้</span>
@@ -58,40 +65,41 @@ export default async function TeacherDashboardPage() {
                       </StatusBadge>
                     ))}
                   </div>
-                )}
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+                )
+              }
+            >
+              <span className="font-medium">{c.classroomName}</span>
+            </ListRow>
+          ))
+        )}
+      </ListGroup>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarClock className="size-4" />
-            วันหยุด/สลับคาบที่จะถึง (14 วันข้างหน้า)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {dashboard.upcomingExceptions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">ไม่มีรายการในช่วงนี้</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {dashboard.upcomingExceptions.map((e) => (
-                <li key={e.id} className="flex items-center justify-between gap-4 text-sm">
+      <ListGroup label="วันหยุด/สลับคาบที่จะถึง (14 วันข้างหน้า)">
+        {dashboard.upcomingExceptions.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-muted-foreground">ไม่มีรายการในช่วงนี้</p>
+        ) : (
+          dashboard.upcomingExceptions.map((e) => {
+            const kindIcon = KIND_ICON[e.kind];
+            return (
+              <ListRow
+                key={e.id}
+                chevron={false}
+                leading={kindIcon && <RowIcon icon={kindIcon.icon} tone={kindIcon.tone} />}
+                trailing={e.note && <span className="text-xs text-muted-foreground">{e.note}</span>}
+              >
+                <div className="flex items-center gap-3">
                   <span className="text-muted-foreground">{DATE_FMT.format(new Date(e.date))}</span>
-                  <span className="flex-1">
+                  <span>
                     {KIND_LABEL[e.kind] ?? e.kind}
                     {e.classroomName ? ` · ${e.classroomName}` : " · ทั้งโรงเรียน"}
                     {e.subjectName ? ` · ${e.subjectName}` : ""}
                   </span>
-                  {e.note && <span className="text-muted-foreground">{e.note}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+                </div>
+              </ListRow>
+            );
+          })
+        )}
+      </ListGroup>
     </div>
   );
 }

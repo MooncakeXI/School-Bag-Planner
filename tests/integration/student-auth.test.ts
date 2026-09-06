@@ -11,13 +11,14 @@ import { resetDb } from "../db-utils";
 async function seedClassroomWithTeacherAndStudent() {
   const school = await prisma.school.create({ data: { name: "School A" } });
   const classroom = await prisma.classroom.create({ data: { schoolId: school.id, name: "Room A" } });
-  const subject = await prisma.subject.create({ data: { name: "Subject A" } });
+  const subject = await prisma.subject.create({ data: { schoolId: school.id, name: "Subject A" } });
 
   const teacherUser = await prisma.user.create({ data: { email: "teacher-a@example.com" } });
   const teacher = await prisma.teacher.create({
     data: { userId: teacherUser.id, email: teacherUser.email!, name: "Teacher A" },
   });
   await prisma.teachingAssignment.create({ data: { teacherId: teacher.id, classroomId: classroom.id, subjectId: subject.id } });
+  await prisma.classroom.update({ where: { id: classroom.id }, data: { homeroomTeacherId: teacher.id } });
   const teacherActor: Actor = { userId: teacherUser.id, teacherId: teacher.id, parentId: null, studentId: null };
 
   const student = await prisma.student.create({ data: { name: "Manee" } });
@@ -51,8 +52,8 @@ describe("issueStudentCredentials", () => {
     const { teacherActor, student } = await seedClassroomWithTeacherAndStudent();
 
     const { studentCode, password } = await issueStudentCredentials(teacherActor, student.id);
-    expect(studentCode).toMatch(/^\d{6}$/);
-    expect(password).toMatch(/^\d{4}$/);
+    expect(studentCode).toMatch(new RegExp(`^\\d{${STUDENT_CODE_LENGTH}}$`));
+    expect(password).toMatch(new RegExp(`^\\d{${STUDENT_PASSWORD_LENGTH}}$`));
 
     const row = await prisma.student.findUniqueOrThrow({ where: { id: student.id } });
     expect(row.studentCode).toBe(studentCode);
@@ -107,44 +108,84 @@ describe("verifyStudentLogin", () => {
     expect(linkedStudent.userId).not.toBeNull();
   });
 
-  it("locks the account after repeated wrong passwords, even with the right code", async () => {
+  it("grows the wait between wrong attempts exponentially (1s, 2s, 4s, 8s, ...), but never locks the account outright", async () => {
     const { teacherActor, student } = await seedClassroomWithTeacherAndStudent();
     const { studentCode, password } = await issueStudentCredentials(teacherActor, student.id);
 
-    for (let i = 0; i < 5; i++) {
-      const result = await verifyStudentLogin(studentCode, "0000");
+    for (const expectedDelay of [1, 2, 4, 8]) {
+      const result = await verifyStudentLogin(studentCode, "000000");
       expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("unreachable");
+      expect(result.error).toContain(`ลองใหม่ใน ${expectedDelay} วินาที`);
+      // Clear this attempt's cooldown so the next one is a genuinely fresh
+      // attempt, not one rejected merely for arriving early.
+      vi.setSystemTime(new Date(Date.now() + (expectedDelay + 1) * 1000));
     }
 
-    // Even the correct password is rejected while locked out.
-    const attempt = await verifyStudentLogin(studentCode, password);
-    expect(attempt.ok).toBe(false);
-
-    const row = await prisma.student.findUniqueOrThrow({ where: { id: student.id } });
-    expect(row.lockedUntil).not.toBeNull();
+    // No hard lock exists at all, unlike the old design — the correct
+    // password succeeds immediately, however many wrong guesses preceded it.
+    expect((await verifyStudentLogin(studentCode, password)).ok).toBe(true);
   });
 
-  it("unlocks again once the lockout window has passed", async () => {
+  it("a wrong attempt made while still inside a cooldown does not advance the backoff level further", async () => {
+    const { teacherActor, student } = await seedClassroomWithTeacherAndStudent();
+    const { studentCode } = await issueStudentCredentials(teacherActor, student.id);
+
+    const first = await verifyStudentLogin(studentCode, "000000"); // sets a 1s cooldown
+    if (first.ok) throw new Error("unreachable");
+    expect(first.error).toContain("ลองใหม่ใน 1 วินาที");
+
+    // Immediately retrying, still inside that 1s window, must not "pay" for
+    // an escalation to 2s — an attacker spamming through the wait can't buy
+    // a shorter effective delay than someone who waits it out once.
+    const duringCooldown = await verifyStudentLogin(studentCode, "000000");
+    if (duringCooldown.ok) throw new Error("unreachable");
+    expect(duringCooldown.error).toMatch(/ลองใหม่ใน 1 วินาที|ลองใหม่ใน 0 วินาที/);
+
+    const row = await prisma.student.findUniqueOrThrow({ where: { id: student.id } });
+    expect(row.failedLoginAttempts).toBe(1);
+  });
+
+  it("a correct password succeeds immediately even during an active cooldown, clearing all backoff state", async () => {
     const { teacherActor, student } = await seedClassroomWithTeacherAndStudent();
     const { studentCode, password } = await issueStudentCredentials(teacherActor, student.id);
 
-    for (let i = 0; i < 5; i++) await verifyStudentLogin(studentCode, "0000");
-    expect((await verifyStudentLogin(studentCode, password)).ok).toBe(false);
+    await verifyStudentLogin(studentCode, "000000"); // sets a 1s cooldown
+    const result = await verifyStudentLogin(studentCode, password); // right away, still inside it
+    expect(result.ok).toBe(true);
 
-    vi.setSystemTime(new Date(Date.now() + 16 * 60 * 1000)); // past the 15-minute lockout
-    expect((await verifyStudentLogin(studentCode, password)).ok).toBe(true);
+    const row = await prisma.student.findUniqueOrThrow({ where: { id: student.id } });
+    expect(row.failedLoginAttempts).toBe(0);
+    expect(row.nextLoginAttemptAt).toBeNull();
+  });
+
+  it("decays the backoff level back to the start after a quiet period", async () => {
+    const { teacherActor, student } = await seedClassroomWithTeacherAndStudent();
+    const { studentCode } = await issueStudentCredentials(teacherActor, student.id);
+
+    const first = await verifyStudentLogin(studentCode, "000000");
+    if (first.ok) throw new Error("unreachable");
+    expect(first.error).toContain("ลองใหม่ใน 1 วินาที");
+
+    // Well past both the 1s cooldown and the 10-minute decay window.
+    vi.setSystemTime(new Date(Date.now() + 11 * 60 * 1000));
+
+    const afterQuiet = await verifyStudentLogin(studentCode, "000000");
+    if (afterQuiet.ok) throw new Error("unreachable");
+    expect(afterQuiet.error).toContain("ลองใหม่ใน 1 วินาที"); // back to the start, not 2s
   });
 
   it("resets the failed-attempt counter on a successful login", async () => {
     const { teacherActor, student } = await seedClassroomWithTeacherAndStudent();
     const { studentCode, password } = await issueStudentCredentials(teacherActor, student.id);
 
-    await verifyStudentLogin(studentCode, "0000");
-    await verifyStudentLogin(studentCode, "0000");
+    await verifyStudentLogin(studentCode, "000000");
+    vi.setSystemTime(new Date(Date.now() + 2000)); // past the 1s cooldown
+    await verifyStudentLogin(studentCode, "000000");
     await verifyStudentLogin(studentCode, password); // succeeds, should clear the counter
 
     const row = await prisma.student.findUniqueOrThrow({ where: { id: student.id } });
     expect(row.failedLoginAttempts).toBe(0);
-    expect(row.lockedUntil).toBeNull();
+    expect(row.nextLoginAttemptAt).toBeNull();
   });
 });

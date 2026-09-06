@@ -1,7 +1,6 @@
 import "dotenv/config";
-import { unlink } from "node:fs/promises";
 import { prisma } from "../lib/prisma";
-import { photoFilePath } from "../lib/packing";
+import { deletePhotosForChecks } from "../lib/photo-storage";
 
 // CLAUDE.md "Privacy": packing photos are purged after a configurable
 // retention period, default 90 days. Run this via an external scheduler
@@ -15,17 +14,7 @@ async function main() {
     select: { id: true, photoPath: true },
   });
 
-  let deleted = 0;
-  for (const check of stale) {
-    try {
-      await unlink(photoFilePath(check.photoPath!));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    }
-    await prisma.packingCheck.update({ where: { id: check.id }, data: { photoPath: null } });
-    deleted++;
-  }
-
+  const deleted = await deletePhotosForChecks(stale);
   console.log(`Purged ${deleted} packing photo(s) older than ${RETENTION_DAYS} days.`);
 }
 

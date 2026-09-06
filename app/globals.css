@@ -140,3 +140,20 @@ body {
     @apply font-sans;
   }
 }
+
+/* QR sticker sheet (app/teacher/classrooms/[id]/print-qr): exact millimetre
+   sizing so labels line up with pre-cut A4 sticker sheets, and a hard
+   break-inside rule so a label is never split across two pages. Grid column
+   count and label width/height are set inline per preset (components/
+   sticker-sheet.tsx) — this stylesheet only owns what Tailwind utilities
+   can't express (@page, print-only break rules). */
+@media print {
+  @page {
+    size: A4;
+    margin: 8mm;
+  }
+  .sticker-label {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

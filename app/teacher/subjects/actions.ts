@@ -7,12 +7,14 @@ import {
   createSubjectItem,
   deleteSubject,
   deleteSubjectItem,
+  setSubjectItemForExam,
 } from "@/lib/catalog";
 
 export async function createSubjectAction(formData: FormData) {
   const actor = await requireActor();
+  const schoolId = formData.get("schoolId") as string;
   const name = formData.get("name") as string;
-  await createSubject(actor, name);
+  await createSubject(actor, schoolId, name);
   redirect("/teacher/subjects");
 }
 
@@ -27,7 +29,16 @@ export async function createSubjectItemAction(formData: FormData) {
   const actor = await requireActor();
   const subjectId = formData.get("subjectId") as string;
   const name = formData.get("name") as string;
-  await createSubjectItem(actor, subjectId, name);
+  const forExam = formData.get("forExam") === "on";
+  await createSubjectItem(actor, subjectId, name, forExam);
+  redirect("/teacher/subjects");
+}
+
+export async function setSubjectItemForExamAction(formData: FormData) {
+  const actor = await requireActor();
+  const subjectItemId = formData.get("subjectItemId") as string;
+  const forExam = formData.get("forExam") === "true";
+  await setSubjectItemForExam(actor, subjectItemId, forExam);
   redirect("/teacher/subjects");
 }
 

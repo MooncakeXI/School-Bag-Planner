@@ -1,12 +1,14 @@
-import Link from "next/link";
 import { requireActor } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { visibleClassroomWhere } from "@/lib/policy";
+import { visibleClassroomWhere, manageableSubjectsInClassroom } from "@/lib/policy";
 import { listTimetableSlots } from "@/lib/timetable";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { termFor } from "@/lib/terms";
+import { schoolToday } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { updateTimetableSlotAction } from "./actions";
-import { SubjectSelect } from "./subject-select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/page-header";
+import { ClassroomChipTabs } from "@/components/classroom-chip-tabs";
+import { SubjectChip } from "@/components/subject-chip";
 
 const WEEKDAYS = [
   { value: "MON", label: "จันทร์" },
@@ -28,7 +30,7 @@ export default async function TeacherTimetablePage({
 
   const classrooms = await prisma.classroom.findMany({
     where: visibleClassroomWhere(actor),
-    select: { id: true, name: true },
+    select: { id: true, name: true, schoolId: true },
     orderBy: { name: "asc" },
   });
 
@@ -36,41 +38,60 @@ export default async function TeacherTimetablePage({
     return <p className="text-sm text-muted-foreground">ยังไม่มีห้องเรียนที่คุณสอน</p>;
   }
 
-  const classroomId = requestedId && classrooms.some((c) => c.id === requestedId) ? requestedId : classrooms[0].id;
+  const classroom = classrooms.find((c) => c.id === requestedId) ?? classrooms[0];
+  const classroomId = classroom.id;
 
-  const [slots, subjects] = await Promise.all([
+  const [slots, manageableSubjects, currentTerm] = await Promise.all([
     listTimetableSlots(actor, classroomId),
-    prisma.subject.findMany({ orderBy: { name: "asc" } }),
+    // The subjects this actor is actually responsible for in this
+    // classroom (homeroom → every subject taught here; a subject teacher →
+    // only their own TeachingAssignment rows) — used purely to highlight
+    // "your periods" below, the same scoping edit_item_copy already uses
+    // everywhere else, not a new authorization shape.
+    manageableSubjectsInClassroom(actor, classroomId),
+    // Shown so it's never ambiguous which term is displayed — this page
+    // always shows "the term covering today" (lib/timetable.ts's
+    // resolveTermId), there is no term picker yet.
+    termFor(classroom.schoolId, schoolToday()),
   ]);
 
+  const myOwnSubjectIds = new Set(manageableSubjects.map((s) => s.id));
   const slotBySpot = new Map(slots.map((s) => [`${s.weekday}-${s.period}`, s]));
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="font-heading text-xl font-semibold">ตารางเรียน</h1>
+      <PageHeader title="ตารางเรียน" subtitle={currentTerm ? currentTerm.name : undefined} />
 
-      <div className="flex flex-wrap gap-1">
-        {classrooms.map((c) => (
-          <Link
-            key={c.id}
-            href={`/teacher/timetable?classroomId=${c.id}`}
-            className={cn(
-              "rounded-xl px-3.5 py-2 text-sm font-semibold transition-colors",
-              c.id === classroomId ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {c.name}
-          </Link>
-        ))}
+      {!currentTerm && (
+        <p className="text-sm text-muted-foreground">
+          ยังไม่มีภาคเรียนที่ครอบคลุมวันนี้สำหรับโรงเรียนนี้
+        </p>
+      )}
+
+      <ClassroomChipTabs
+        classrooms={classrooms}
+        activeId={classroomId}
+        hrefFor={(id) => `/teacher/timetable?classroomId=${id}`}
+      />
+
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-primary" />
+          วิชาที่คุณสอน
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full bg-muted-foreground/30" />
+          วิชาอื่น
+        </span>
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead className="w-20" />
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-16" />
               {WEEKDAYS.map((w) => (
-                <TableHead key={w.value} className="text-center">
+                <TableHead key={w.value} className="text-center font-heading text-[13px]">
                   {w.label}
                 </TableHead>
               ))}
@@ -82,14 +103,24 @@ export default async function TeacherTimetablePage({
                 <TableCell className="font-medium text-muted-foreground">คาบ {period}</TableCell>
                 {WEEKDAYS.map((w) => {
                   const slot = slotBySpot.get(`${w.value}-${period}`);
+                  const isMine = slot ? myOwnSubjectIds.has(slot.subjectId) : false;
                   return (
-                    <TableCell key={w.value} className="min-w-32 p-1.5">
-                      <form action={updateTimetableSlotAction}>
-                        <input type="hidden" name="classroomId" value={classroomId} />
-                        <input type="hidden" name="weekday" value={w.value} />
-                        <input type="hidden" name="period" value={period} />
-                        <SubjectSelect defaultValue={slot?.subjectId ?? ""} subjects={subjects} />
-                      </form>
+                    <TableCell key={w.value} className="min-w-28 p-1.5">
+                      {slot ? (
+                        <div
+                          className={cn(
+                            "flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl p-1.5 text-center",
+                            isMine ? "bg-primary/10 ring-2 ring-primary/60" : "bg-muted/60",
+                          )}
+                        >
+                          <SubjectChip subjectName={slot.subject.name} className="size-7 text-[9.5px]" />
+                          <span className={cn("truncate text-[11px] leading-tight", isMine ? "font-semibold text-primary" : "text-muted-foreground")}>
+                            {slot.subject.name}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex min-h-14 items-center justify-center text-muted-foreground/40">—</div>
+                      )}
                     </TableCell>
                   );
                 })}
