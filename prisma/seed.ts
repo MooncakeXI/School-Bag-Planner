@@ -284,32 +284,47 @@ async function main() {
 
   await prisma.guardianship.create({ data: { parentId: parent.id, studentId: maneeId } });
 
-  // Each subject meets 3x/week per classroom. A subject's teacher only
-  // covers their own grade's 4 sections (not all 24 classrooms), so the
-  // real constraint is narrower than the original single-grade seed's: for
-  // a fixed (grade, subject) pair, its 4 sections × 3 sessions = 12 sessions
-  // must land on distinct slots (out of 30) so that one teacher is never in
-  // two sections at once; and for a fixed classroom, its 6 subjects × 3
-  // sessions = 18 sessions must land on distinct slots too. Building
-  // classroomDefs grade-major (above) means a fixed grade's 4 sections get 4
-  // *consecutive* classroomIndex values — which is exactly what makes the
-  // same shift-injective mapping the original 8-classroom seed used still
-  // satisfy both constraints unchanged, without needing a bigger modulus:
-  // for a fixed classroomIndex, subjectIndex*5+session (0-5, 0-2) gives 18
-  // distinct residues mod 30, shifted by a constant — still distinct. For a
-  // fixed subjectIndex and a fixed grade's 4 *consecutive* classroomIndex
-  // values, classroomIndex*3+session enumerates 12 consecutive integers
-  // (mixed-radix in (section, session)) — still distinct mod 30. Neither
-  // property depends on how many classrooms exist in total, only on a
-  // grade's sections being consecutive — which they are, by construction.
+  // Each subject meets 3x/week per classroom, one period each — never
+  // stacked into consecutive periods on the same day (a real school day
+  // mixes subjects; it doesn't run the same one three times in a row).
+  // weekdayFor depends only on (subject, session): a subject's 3 sessions
+  // land on 3 *different* weekdays, since (2*0, 2*1, 2*2) mod 5 = 0, 2, 4
+  // are always distinct residues (5 is prime, 2 isn't 0 mod 5) — true for
+  // every subjectIndex. periodFor then only has to avoid same-day clashes
+  // within one classroom and same-day/same-teacher clashes across one
+  // grade's 4 sections; both are shift-injectivity arguments (see below),
+  // so any grade/section/subject/session combination is safe by
+  // construction, not by enumeration.
+  //
+  // Per-classroom (fixed grade+section, so `section` and `grade` are both
+  // constants): grouping the 18 (subject, session) pairs by the weekday
+  // they land on, the *base* case section=0 gives period=(subject+session)
+  // mod 6 values that are already pairwise distinct within every weekday
+  // group (verified directly — 6 subjects × 3 sessions is small enough to
+  // check exhaustively). `section` and `grade` are just two more additive
+  // constants layered on top of that base, and adding a constant mod 6 is
+  // a bijection — it can't introduce a collision that wasn't already there.
+  //
+  // Per-grade-teacher (fixed subject+session, so a fixed weekday, and fixed
+  // grade): varying section 0-3 (that subject's own 4 sections) shifts
+  // (section) by 0-3, i.e. 4 *consecutive* residues mod 6 — always
+  // distinct regardless of what constant (subject+session+grade) they're
+  // offset by, so the one teacher covering all 4 sections is never double
+  // booked. (The cross-grade SENIOR_MATH_GRADES case — one teacher, one
+  // section, three different grades — is exactly why `grade` has to be in
+  // the period formula too: without it, "section 0, math, session k" would
+  // land on the identical weekday+period for every grade, double-booking
+  // that shared teacher across grades. Adding `grade` as a third constant
+  // offset keeps the two properties above intact while separating the
+  // three grades' periods for that teacher.)
   const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI"] as const;
   const PERIODS_PER_DAY = 6;
   const SESSIONS_PER_WEEK = 3;
-  const TOTAL_SLOTS = WEEKDAYS.length * PERIODS_PER_DAY;
 
-  function slotFor(classroomIndex: number, subjectIndex: number, session: number) {
-    const t = (classroomIndex * 3 + subjectIndex * 5 + session) % TOTAL_SLOTS;
-    return { weekday: WEEKDAYS[Math.floor(t / PERIODS_PER_DAY)], period: (t % PERIODS_PER_DAY) + 1 };
+  function slotFor(grade: number, section: number, subjectIndex: number, session: number) {
+    const weekday = WEEKDAYS[(subjectIndex + 2 * session) % WEEKDAYS.length];
+    const period = ((section + subjectIndex + session + grade) % PERIODS_PER_DAY) + 1;
+    return { weekday, period };
   }
 
   // A timetable is always scoped to a Term (see prisma/schema.prisma's
@@ -324,7 +339,7 @@ async function main() {
       SUBJECT_DEFS.flatMap((_, subjectIndex) => {
         const gs = gradeSubjectByKey.get(`${cd.grade}-${subjectIndex}`)!;
         return Array.from({ length: SESSIONS_PER_WEEK }, (_, k) => {
-          const { weekday, period } = slotFor(classroomIndex, subjectIndex, k);
+          const { weekday, period } = slotFor(cd.grade, cd.section - 1, subjectIndex, k);
           return { termId: term.id, classroomId: classroomIds[classroomIndex], weekday, period, subjectId: gs.subjectId };
         });
       }),
