@@ -28,7 +28,7 @@ export default async function TeacherClassroomsPage() {
           {classrooms.map((c) => (
             <ListRow
               key={c.id}
-              href={`/teacher/classrooms/${c.id}`}
+              href={`/teacher/classrooms/${c.id}/today`}
               leading={<RowIcon icon={Users} tone="primary" />}
               trailing={<span className="text-sm text-muted-foreground">{c._count.enrollments} คน</span>}
             >
