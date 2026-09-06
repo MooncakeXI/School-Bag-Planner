@@ -8,14 +8,14 @@ import { SCHOOL_TZ } from "../lib/time";
 import { generateCode } from "../lib/qr";
 import { generateUniqueStudentCode, generatePassword } from "../lib/student-auth";
 
-// This is the คณิตศาสตร์ (math) teacher's address, so that logging in with
-// this Google account (once AUTH_GOOGLE_ID/SECRET are set) auto-links the
-// teacher (and parent) role — see the events.signIn hook in auth.ts.
-// Deliberately NOT also linked to a Student: app/page.tsx's role priority
-// is student > teacher > parent with no picker, so a student-linked
-// account would always land on the student view instead of this one's
-// actual role. Use one of the issued student code+PIN logins (printed at
-// the end of this script) to test the student view instead.
+// This is the ป.ปลาย (senior primary, ป.4-6) math teacher's address, so that
+// logging in with this Google account (once AUTH_GOOGLE_ID/SECRET are set)
+// auto-links the teacher (and parent) role — see the events.signIn hook in
+// auth.ts. Deliberately NOT also linked to a Student: app/page.tsx's role
+// priority is student > teacher > parent with no picker, so a
+// student-linked account would always land on the student view instead of
+// this one's actual role. Use one of the issued student code+PIN logins
+// (printed at the end of this script) to test the student view instead.
 const DEV_LOGIN_EMAIL = "suvijak237@gmail.com";
 
 function nextWeekday(target: number): string {
@@ -26,6 +26,83 @@ function nextWeekday(target: number): string {
   if (!iso) throw new Error("unreachable");
   return iso;
 }
+
+const GRADES = [1, 2, 3, 4, 5, 6];
+const SECTIONS_PER_GRADE = 4;
+const STUDENTS_PER_CLASSROOM = 15;
+
+// Grade 4 section 1 is the one classroom with real, testable data (named
+// students, issued logins, homeroom teacher = DEV_LOGIN_EMAIL) — every other
+// classroom is just enough to make the school look real and to exercise a
+// conflict-free multi-grade timetable.
+const FEATURED_GRADE = 4;
+const FEATURED_SECTION = 1;
+
+// Each grade gets its own Subject per subject name (e.g. "คณิตศาสตร์ ป.1" is
+// a different Subject row from "คณิตศาสตร์ ป.6"), each with its own single
+// SubjectItem — a ป.1 kid's workbook is physically a different book from a
+// ป.6 kid's. This is the same "SubjectItem is per-subject, never shared
+// across an unrelated scope" invariant as ever; it just means "subject" here
+// is scoped per grade rather than assumed to mean one grade school-wide, the
+// way the original single-grade (ป.4-only) seed could get away with. It also
+// means every existing catalog/roster/dashboard query (which already scopes
+// by whichever Subject a classroom's own TimetableSlot/TeachingAssignment
+// points at) needs no changes at all — a ป.1 classroom's queries simply never
+// see a ป.6 Subject in the first place.
+const SUBJECT_DEFS = [
+  { name: "คณิตศาสตร์", slug: "math" },
+  { name: "ภาษาไทย", slug: "thai" },
+  { name: "วิทยาศาสตร์", slug: "science" },
+  { name: "ภาษาอังกฤษ", slug: "english" },
+  { name: "สังคมศึกษา", slug: "social" },
+  { name: "พลศึกษา", slug: "pe" },
+] as const;
+
+function itemNameFor(subjectName: string, grade: number): string {
+  return subjectName === "พลศึกษา" ? `ชุดพลศึกษา ป.${grade}` : `แบบฝึกหัด${subjectName} ป.${grade}`;
+}
+
+// Deterministic name generator for the 36 (grade × subject) teachers — no
+// need for 36 hand-picked names, just enough variety that they don't all
+// look identical in a roster list.
+const TEACHER_FIRST_NAMES = ["สมศรี", "วิชัย", "สุดา", "ประสงค์", "ชาติ", "มาลัย"];
+const TEACHER_LAST_NAMES = ["ใจดี", "ค้นคว้า", "เก่งภาษา", "รอบรู้", "แข็งแรง", "สุขใจ"];
+
+// Real test accounts: a (grade, subject-slug) slot gets a real Google email
+// + display name instead of the generated @example.com one, so signing in
+// with that Google account auto-links (auth.ts's events.signIn) straight to
+// this teacher. Add one entry per person you want to hand a working login
+// covering an *entire* grade's 4 sections. (DEV_LOGIN_EMAIL isn't here — it
+// covers only one section across three grades, which needs the separate
+// SENIOR_MATH_GRADES handling below instead; see that block's comment.)
+const TEACHER_OVERRIDES: { grade: number; slug: string; email: string; name: string }[] = [
+  { grade: 3, slug: "english", email: "anongpat2805@gmail.com", name: "ครูอนงค์ภัทร ภาษาดี" },
+  { grade: 2, slug: "science", email: "queenam9009@gmail.com", name: "ครูควีนอำ วิทย์ดี" },
+  { grade: 1, slug: "thai", email: "chanthima9986@gmail.com", name: "ครูจันทิมา ภาษาไทยดี" },
+  { grade: 5, slug: "social", email: "uumaporn57@gmail.com", name: "ครูอุมาพร สังคมดี" },
+  { grade: 6, slug: "pe", email: "0992471574c@gmail.com", name: "ครูพลานามัย แข็งแรง" },
+];
+
+// Classrooms that get a real ครูประจำชั้น from the whole-grade overrides
+// above — the classroom's own homeroom teacher must be one of the teachers
+// already teaching there (any subject works; picking the overridden one
+// just means that same test login gets homeroom-only actions, not merely
+// their own subject's items). The featured classroom's homeroom (its
+// teacher comes from SENIOR_MATH_GRADES instead) is set separately below.
+const HOMEROOM_OVERRIDES: { grade: number; section: number; teacherGrade: number; teacherSlug: string }[] = [
+  { grade: 3, section: 1, teacherGrade: 3, teacherSlug: "english" },
+  { grade: 1, section: 1, teacherGrade: 1, teacherSlug: "thai" },
+  { grade: 6, section: 1, teacherGrade: 6, teacherSlug: "pe" },
+];
+
+// DEV_LOGIN_EMAIL teaches คณิตศาสตร์ for ป.ปลาย (senior primary) — but only
+// section 1 of each of ป.4-6, not every section: covering all 12 ป.4-6
+// classrooms at 3 sessions/week each would need 36 slots, over one
+// teacher's 30-slot weekly capacity. Each grade's *other* 3 sections keep
+// their own default per-grade math teacher (created normally below); only
+// section 1's TeachingAssignment gets reassigned to this one shared teacher.
+const SENIOR_MATH_GRADES = [4, 5, 6];
+const SENIOR_MATH_SECTION = 1;
 
 async function main() {
   // Dev seed: wipe and recreate, deepest dependents first. QRCode uses
@@ -50,109 +127,145 @@ async function main() {
 
   const school = await prisma.school.create({ data: { name: "โรงเรียนบ้านสวนสมบูรณ์" } });
 
-  // ป.4/1 - ป.4/8, 20 students each.
-  const classrooms = await Promise.all(
-    Array.from({ length: 8 }, (_, i) =>
-      prisma.classroom.create({ data: { schoolId: school.id, name: `ป.4/${i + 1}` } }),
-    ),
+  // ป.1/1 - ป.6/4, grade-major order (grade outer, section inner) — the
+  // conflict-free timetable formula below relies on each grade's 4 sections
+  // landing on 4 *consecutive* indices in this array.
+  const classroomDefs = GRADES.flatMap((grade) =>
+    Array.from({ length: SECTIONS_PER_GRADE }, (_, i) => ({ grade, section: i + 1 })),
   );
-  const classroom = classrooms[0];
-
-  const subjectDefs = [
-    { name: "คณิตศาสตร์", item: "แบบฝึกหัดคณิตศาสตร์ ป.4" },
-    { name: "ภาษาไทย", item: "แบบฝึกหัดภาษาไทย ป.4" },
-    { name: "วิทยาศาสตร์", item: "แบบฝึกหัดวิทยาศาสตร์ ป.4" },
-    { name: "ภาษาอังกฤษ", item: "แบบฝึกหัดภาษาอังกฤษ ป.4" },
-    { name: "สังคมศึกษา", item: "แบบฝึกหัดสังคมศึกษา ป.4" },
-    { name: "พลศึกษา", item: "ชุดพลศึกษา" },
-  ] as const;
-
-  const subjects = new Map<string, { id: string; itemId: string }>();
-  for (const def of subjectDefs) {
-    const subject = await prisma.subject.create({ data: { schoolId: school.id, name: def.name } });
-    const subjectItem = await prisma.subjectItem.create({ data: { subjectId: subject.id, name: def.item } });
-    subjects.set(def.name, { id: subject.id, itemId: subjectItem.id });
-  }
-  const s = (name: (typeof subjectDefs)[number]["name"]) => subjects.get(name)!;
-
-  // One teacher per subject, each covering all 8 classrooms — see the
-  // timetable construction below for how their periods stay conflict-free.
-  // คณิตศาสตร์ is the one exception: split across two teachers by classroom
-  // (DEV_LOGIN_EMAIL only covers 4/1, 4/4, 4/7, 4/8 — a real subject
-  // teacher doesn't cover every section of a grade; a second math teacher
-  // covers the other 4), so the app has real, seeded data exercising "two
-  // different teachers of the same subject at the same school," not just
-  // the single-teacher-per-subject case every other subject still is.
-  const teacherDefs = [
-    { subject: "ภาษาไทย", email: "teacher.thai@example.com", name: "ครูมาลัย สุขใจ" },
-    { subject: "วิทยาศาสตร์", email: "teacher.science@example.com", name: "ครูวิชัย ค้นคว้า" },
-    { subject: "ภาษาอังกฤษ", email: "teacher.english@example.com", name: "ครูสุดา เก่งภาษา" },
-    { subject: "สังคมศึกษา", email: "teacher.social@example.com", name: "ครูประสงค์ รอบรู้" },
-    { subject: "พลศึกษา", email: "teacher.pe@example.com", name: "ครูชาติ แข็งแรง" },
-  ] as const;
-
-  const teachers = new Map<string, { id: string; name: string; email: string }>();
-  for (const def of teacherDefs) {
-    const teacher = await prisma.teacher.create({ data: { email: def.email, name: def.name } });
-    teachers.set(def.subject, teacher);
+  // One batched createMany, not 24 parallel create() calls — each parallel
+  // call opens its own connection, and Supabase's session-mode pooler caps
+  // out at pool_size (15) concurrent clients, well under 24.
+  const classroomIds = classroomDefs.map(() => randomUUID());
+  await prisma.classroom.createMany({
+    data: classroomDefs.map((cd, i) => ({ id: classroomIds[i], schoolId: school.id, name: `ป.${cd.grade}/${cd.section}` })),
+  });
+  function classroomAt(grade: number, section: number): string {
+    const index = classroomDefs.findIndex((cd) => cd.grade === grade && cd.section === section);
+    return classroomIds[index];
   }
 
-  const mathTeacherA = await prisma.teacher.create({ data: { email: DEV_LOGIN_EMAIL, name: "ครูสมศรี ใจดี" } });
-  const mathTeacherB = await prisma.teacher.create({ data: { email: "teacher.math2@example.com", name: "ครูอนันต์ เลขคณิต" } });
-  teachers.set("คณิตศาสตร์", mathTeacherA); // so the homeroom assignment below still resolves via the same map
+  // One Subject + one SubjectItem per (grade, subject name), one Teacher
+  // covering that grade's 4 sections for that one subject — a real subject
+  // teacher teaches a grade level, not the whole school (6 grades × 4
+  // sections × 3 sessions/week would be triple a teacher's own weekly
+  // capacity of 30 slots). This also means "two different teachers of the
+  // same subject at the same school" (คณิตศาสตร์ ป.1's teacher vs.
+  // คณิตศาสตร์ ป.6's teacher) falls out for free, without a special case.
+  type GradeSubject = {
+    grade: number;
+    defIndex: number;
+    subjectId: string;
+    itemId: string;
+    teacherId: string;
+    teacherEmail: string;
+    teacherName: string;
+  };
 
-  // ป.4/1, 4/4, 4/7, 4/8 (indices 0, 3, 6, 7) — teacher A; the rest — teacher B.
-  const mathTeacherAClassroomIndices = new Set([0, 3, 6, 7]);
+  const gradeSubjects: GradeSubject[] = [];
+  for (const grade of GRADES) {
+    SUBJECT_DEFS.forEach((def, defIndex) => {
+      const override = TEACHER_OVERRIDES.find((o) => o.grade === grade && o.slug === def.slug);
+      gradeSubjects.push({
+        grade,
+        defIndex,
+        subjectId: randomUUID(),
+        itemId: randomUUID(),
+        teacherId: randomUUID(),
+        teacherEmail: override?.email ?? `teacher.${def.slug}.g${grade}@example.com`,
+        teacherName:
+          override?.name ??
+          `ครู${TEACHER_FIRST_NAMES[(grade + defIndex) % TEACHER_FIRST_NAMES.length]}${TEACHER_LAST_NAMES[(grade * 2 + defIndex) % TEACHER_LAST_NAMES.length]}`,
+      });
+    });
+  }
+  const gradeSubjectByKey = new Map(gradeSubjects.map((gs) => [`${gs.grade}-${gs.defIndex}`, gs]));
 
-  await prisma.teachingAssignment.createMany({
-    data: [
-      ...classrooms.flatMap((cls) =>
-        subjectDefs
-          .filter((def) => def.name !== "คณิตศาสตร์")
-          .map((def) => ({
-            teacherId: teachers.get(def.name)!.id,
-            classroomId: cls.id,
-            subjectId: s(def.name).id,
-          })),
-      ),
-      ...classrooms.map((cls, i) => ({
-        teacherId: (mathTeacherAClassroomIndices.has(i) ? mathTeacherA : mathTeacherB).id,
-        classroomId: cls.id,
-        subjectId: s("คณิตศาสตร์").id,
-      })),
-    ],
+  await prisma.subject.createMany({
+    data: gradeSubjects.map((gs) => ({ id: gs.subjectId, schoolId: school.id, name: `${SUBJECT_DEFS[gs.defIndex].name} ป.${gs.grade}` })),
+  });
+  await prisma.subjectItem.createMany({
+    data: gradeSubjects.map((gs) => ({ id: gs.itemId, subjectId: gs.subjectId, name: itemNameFor(SUBJECT_DEFS[gs.defIndex].name, gs.grade) })),
+  });
+  await prisma.teacher.createMany({
+    data: gradeSubjects.map((gs) => ({ id: gs.teacherId, email: gs.teacherEmail, name: gs.teacherName })),
   });
 
-  // ครูประจำชั้น for ป.4/1 (the only classroom with real students below) —
-  // the math teacher, so DEV_LOGIN_EMAIL can exercise homeroom-only actions
-  // (link parent, reissue login) end to end, not just their own subject.
+  await prisma.teachingAssignment.createMany({
+    data: gradeSubjects.flatMap((gs) =>
+      Array.from({ length: SECTIONS_PER_GRADE }, (_, i) => ({
+        teacherId: gs.teacherId,
+        classroomId: classroomAt(gs.grade, i + 1),
+        subjectId: gs.subjectId,
+      })),
+    ),
+  });
+
+  // ครูประจำชั้น — each override classroom gets one of its own subject
+  // teachers as homeroom, so that teacher can exercise homeroom-only actions
+  // (link parent, reissue login, spot-check) end to end, not just their own
+  // subject's items.
+  for (const ho of HOMEROOM_OVERRIDES) {
+    const defIndex = SUBJECT_DEFS.findIndex((def) => def.slug === ho.teacherSlug);
+    const homeroomTeacher = gradeSubjectByKey.get(`${ho.teacherGrade}-${defIndex}`)!;
+    await prisma.classroom.update({
+      where: { id: classroomAt(ho.grade, ho.section) },
+      data: { homeroomTeacherId: homeroomTeacher.teacherId },
+    });
+  }
+
+  // DEV_LOGIN_EMAIL's ป.ปลาย math coverage (see SENIOR_MATH_GRADES above):
+  // one Teacher row, reassigned onto just section 1's already-created
+  // TeachingAssignment for each of ป.4-6's คณิตศาสตร์ — the other 3 sections
+  // per grade stay with that grade's own default math teacher.
+  const seniorMathTeacherId = randomUUID();
+  await prisma.teacher.create({ data: { id: seniorMathTeacherId, email: DEV_LOGIN_EMAIL, name: "ครูสมศรี ใจดี" } });
+  const mathDefIndex = SUBJECT_DEFS.findIndex((def) => def.slug === "math");
+  for (const grade of SENIOR_MATH_GRADES) {
+    const gs = gradeSubjectByKey.get(`${grade}-${mathDefIndex}`)!;
+    await prisma.teachingAssignment.update({
+      where: {
+        teacherId_classroomId_subjectId: {
+          teacherId: gs.teacherId,
+          classroomId: classroomAt(grade, SENIOR_MATH_SECTION),
+          subjectId: gs.subjectId,
+        },
+      },
+      data: { teacherId: seniorMathTeacherId },
+    });
+  }
   await prisma.classroom.update({
-    where: { id: classroom.id },
-    data: { homeroomTeacherId: teachers.get("คณิตศาสตร์")!.id },
+    where: { id: classroomAt(FEATURED_GRADE, FEATURED_SECTION) },
+    data: { homeroomTeacherId: seniorMathTeacherId },
   });
 
   const parent = await prisma.parent.create({
     data: { email: DEV_LOGIN_EMAIL, name: "ผู้ปกครองของมานี" },
   });
 
-  // 20 students per classroom. ป.4/1 keeps the 5 named ones (they get real
-  // login credentials below); the rest are generated placeholders.
+  // 15 students per classroom. The featured classroom keeps 5 named students
+  // (they get real login credentials below); every other seat is a generated
+  // placeholder.
   const namedStudents = ["มานี", "ปิติ", "ชูใจ", "วีระ", "สมหญิง"] as const;
-  const STUDENTS_PER_CLASSROOM = 20;
+  const featuredClassroomId = classroomAt(FEATURED_GRADE, FEATURED_SECTION);
 
-  const studentDefs: { id: string; name: string; classroomIndex: number }[] = namedStudents.map((name) => ({
+  const studentDefs: { id: string; name: string; classroomId: string; grade: number }[] = namedStudents.map((name) => ({
     id: randomUUID(),
     name,
-    classroomIndex: 0,
+    classroomId: featuredClassroomId,
+    grade: FEATURED_GRADE,
   }));
-  for (let c = 0; c < classrooms.length; c++) {
-    const alreadyPlaced = c === 0 ? namedStudents.length : 0;
+  for (const cd of classroomDefs) {
+    const isFeatured = cd.grade === FEATURED_GRADE && cd.section === FEATURED_SECTION;
+    const alreadyPlaced = isFeatured ? namedStudents.length : 0;
+    const classroomId = classroomAt(cd.grade, cd.section);
     for (let i = alreadyPlaced; i < STUDENTS_PER_CLASSROOM; i++) {
       const gender = i % 2 === 0 ? "เด็กชาย" : "เด็กหญิง";
       studentDefs.push({
         id: randomUUID(),
-        name: `${gender} ${classrooms[c].name} #${String(i + 1).padStart(2, "0")}`,
-        classroomIndex: c,
+        name: `${gender} ป.${cd.grade}/${cd.section} #${String(i + 1).padStart(2, "0")}`,
+        classroomId,
+        grade: cd.grade,
       });
     }
   }
@@ -164,26 +277,31 @@ async function main() {
   await prisma.enrollment.createMany({
     data: studentDefs.map((sd) => ({
       studentId: sd.id,
-      classroomId: classrooms[sd.classroomIndex].id,
+      classroomId: sd.classroomId,
       startDate: new Date(enrollStart),
     })),
   });
 
   await prisma.guardianship.create({ data: { parentId: parent.id, studentId: maneeId } });
 
-  // Each subject meets 3x/week per classroom. Since most subjects have
-  // exactly one teacher covering all 8 classrooms (instead of one teacher
-  // covering every subject in one classroom), that teacher can never be in
-  // two classrooms at once — so the same subject's sessions must land on
-  // different (weekday, period) slots across classrooms. This mapping
-  // guarantees that: for a fixed subject, all 8*3=24 sessions land on
-  // distinct slots (out of 30 available), and for a fixed classroom, all
-  // 6*3=18 sessions across its subjects land on distinct slots too —
-  // modular-arithmetic shift-injectivity, not trial and error. คณิตศาสตร์'s
-  // split across two teachers (above) doesn't need anything different here:
-  // guaranteeing all 8 classrooms distinct slots is already stricter than
-  // the real constraint (each math teacher's own 4 classrooms distinct),
-  // so the same per-subject mapping still holds for it unchanged.
+  // Each subject meets 3x/week per classroom. A subject's teacher only
+  // covers their own grade's 4 sections (not all 24 classrooms), so the
+  // real constraint is narrower than the original single-grade seed's: for
+  // a fixed (grade, subject) pair, its 4 sections × 3 sessions = 12 sessions
+  // must land on distinct slots (out of 30) so that one teacher is never in
+  // two sections at once; and for a fixed classroom, its 6 subjects × 3
+  // sessions = 18 sessions must land on distinct slots too. Building
+  // classroomDefs grade-major (above) means a fixed grade's 4 sections get 4
+  // *consecutive* classroomIndex values — which is exactly what makes the
+  // same shift-injective mapping the original 8-classroom seed used still
+  // satisfy both constraints unchanged, without needing a bigger modulus:
+  // for a fixed classroomIndex, subjectIndex*5+session (0-5, 0-2) gives 18
+  // distinct residues mod 30, shifted by a constant — still distinct. For a
+  // fixed subjectIndex and a fixed grade's 4 *consecutive* classroomIndex
+  // values, classroomIndex*3+session enumerates 12 consecutive integers
+  // (mixed-radix in (section, session)) — still distinct mod 30. Neither
+  // property depends on how many classrooms exist in total, only on a
+  // grade's sections being consecutive — which they are, by construction.
   const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI"] as const;
   const PERIODS_PER_DAY = 6;
   const SESSIONS_PER_WEEK = 3;
@@ -202,20 +320,23 @@ async function main() {
   });
 
   await prisma.timetableSlot.createMany({
-    data: classrooms.flatMap((cls, c) =>
-      subjectDefs.flatMap((def, sIdx) =>
-        Array.from({ length: SESSIONS_PER_WEEK }, (_, k) => {
-          const { weekday, period } = slotFor(c, sIdx, k);
-          return { termId: term.id, classroomId: cls.id, weekday, period, subjectId: s(def.name).id };
-        }),
-      ),
+    data: classroomDefs.flatMap((cd, classroomIndex) =>
+      SUBJECT_DEFS.flatMap((_, subjectIndex) => {
+        const gs = gradeSubjectByKey.get(`${cd.grade}-${subjectIndex}`)!;
+        return Array.from({ length: SESSIONS_PER_WEEK }, (_, k) => {
+          const { weekday, period } = slotFor(classroomIndex, subjectIndex, k);
+          return { termId: term.id, classroomId: classroomIds[classroomIndex], weekday, period, subjectId: gs.subjectId };
+        });
+      }),
     ),
   });
 
-  // One school-wide holiday and one classroom period-swap, both landing on
-  // a real school day so they're visible in the demo.
+  // One school-wide holiday and one classroom period-swap (on the featured
+  // classroom), both landing on a real school day so they're visible in the
+  // demo.
   const holidayDate = nextWeekday(1); // next Monday
   const swapDate = nextWeekday(3); // next Wednesday
+  const featuredPe = gradeSubjectByKey.get(`${FEATURED_GRADE}-5`)!; // SUBJECT_DEFS[5] === พลศึกษา
 
   await prisma.scheduleException.create({
     data: {
@@ -230,28 +351,32 @@ async function main() {
   await prisma.scheduleException.create({
     data: {
       schoolId: school.id,
-      classroomId: classroom.id,
+      classroomId: featuredClassroomId,
       date: new Date(swapDate),
       kind: "PERIOD_SWAP",
       period: 1,
-      subjectId: s("พลศึกษา").id,
+      subjectId: featuredPe.subjectId,
       note: "สลับเป็นพลศึกษาเพื่อซ้อมกีฬาสี",
     },
   });
 
-  // Item copies: each student owns a copy of every subject item, except
-  // Manee's math workbook, which is currently with the teacher for grading
-  // — this must NOT appear in her packing list (invariant 5). Every other
-  // copy gets a QR sticker bound immediately so the scanning flow works
-  // out of the box in dev — invariant 7 means there is no other way to
-  // check an item in, even the PE kit.
+  // Item copies: each student owns a copy of every subject item *for their
+  // own grade* (never another grade's — a ป.1 kid never has a copy of the
+  // ป.6 math workbook, so requiredItemsFor's copy-based filtering naturally
+  // never shows it to them), except Manee's math workbook, which is
+  // currently with the teacher for grading — this must NOT appear in her
+  // packing list (invariant 5). Every other copy gets a QR sticker bound
+  // immediately so the scanning flow works out of the box in dev —
+  // invariant 7 means there is no other way to check an item in, even the
+  // PE kit.
   const itemCopyDefs = studentDefs.flatMap((sd) =>
-    subjectDefs.map((def) => {
-      const isManeesGradedMath = sd.id === maneeId && def.name === "คณิตศาสตร์";
+    SUBJECT_DEFS.map((def, defIndex) => {
+      const gs = gradeSubjectByKey.get(`${sd.grade}-${defIndex}`)!;
+      const isManeesGradedMath = sd.id === maneeId && def.slug === "math";
       return {
         id: randomUUID(),
         studentId: sd.id,
-        subjectItemId: s(def.name).itemId,
+        subjectItemId: gs.itemId,
         state: (isManeesGradedMath ? "GRADING" : "WITH_STUDENT") as ItemCopyState,
       };
     }),
@@ -275,13 +400,13 @@ async function main() {
   });
 
   // Issue real student-login credentials (code + PIN) for the 5 named
-  // students only, so /login's student tab has something to test with —
-  // the 155 generated placeholders stay login-less until a teacher issues
-  // credentials for them through the app. Mirrors lib/roster.ts's
-  // issueStudentCredentials directly (bcrypt hash only, ever) rather than
-  // going through it, since this trusted seed script isn't acting as a
-  // policy-checked teacher request — the plaintext PIN below is printed
-  // once, exactly like the real issuance UI, and is never written anywhere.
+  // students only, so /login's student tab has something to test with — the
+  // rest stay login-less until a teacher issues credentials for them through
+  // the app. Mirrors lib/roster.ts's issueStudentCredentials directly
+  // (bcrypt hash only, ever) rather than going through it, since this
+  // trusted seed script isn't acting as a policy-checked teacher request —
+  // the plaintext PIN below is printed once, exactly like the real issuance
+  // UI, and is never written anywhere.
   const credentials = [];
   for (const name of namedStudents) {
     const sd = studentDefs.find((x) => x.name === name)!;
@@ -294,18 +419,23 @@ async function main() {
 
   console.log("Seeded:", {
     school: school.name,
-    classrooms: classrooms.map((c) => c.name),
+    grades: GRADES.map((g) => `ป.${g}/1-${SECTIONS_PER_GRADE}`),
+    totalClassrooms: classroomDefs.length,
     studentsPerClassroom: STUDENTS_PER_CLASSROOM,
     totalStudents: studentDefs.length,
-    teachers: [
-      ...teacherDefs.map((t) => `${t.name} — ${t.subject} — ${t.email}`),
-      `${mathTeacherA.name} — คณิตศาสตร์ (ป.4/1, 4/4, 4/7, 4/8) — ${mathTeacherA.email}`,
-      `${mathTeacherB.name} — คณิตศาสตร์ (ป.4/2, 4/3, 4/5, 4/6) — ${mathTeacherB.email}`,
-    ],
+    totalSubjects: gradeSubjects.length,
+    totalTeachers: gradeSubjects.length + 1, // +1 for the shared ป.ปลาย math teacher
     parent: parent.name,
     holidayDate,
     swapDate,
-    teacherLogin: `${DEV_LOGIN_EMAIL} — Google sign-in lands on the teacher view (คณิตศาสตร์ teacher for ป.4/1, 4/4, 4/7, 4/8, and homeroom of ป.4/1; also linked as parent)`,
+    teacherLogins: [
+      `${DEV_LOGIN_EMAIL} — คณิตศาสตร์ ป.ปลาย teacher (ป.${SENIOR_MATH_GRADES.join("/")}, section ${SENIOR_MATH_SECTION} of each only — see the seed script's capacity comment), homeroom of ป.${FEATURED_GRADE}/${FEATURED_SECTION}, also linked as parent`,
+      ...TEACHER_OVERRIDES.map((o) => {
+        const homeroom = HOMEROOM_OVERRIDES.find((ho) => ho.teacherGrade === o.grade && ho.teacherSlug === o.slug);
+        const subjectName = SUBJECT_DEFS.find((def) => def.slug === o.slug)!.name;
+        return `${o.email} — ${subjectName} ป.${o.grade} teacher${homeroom ? `, homeroom of ป.${homeroom.grade}/${homeroom.section}` : ""}`;
+      }),
+    ],
   });
   console.log("Student login credentials for the 5 named students (shown once, not stored anywhere):");
   console.table(credentials);

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { currentActor } from "@/lib/session";
+import { LandingPage } from "@/components/landing-page";
 
 // No role picker: an account gets sent straight to its own page. When one
 // account is linked to more than one role (e.g. a teacher who is also a
@@ -9,7 +10,7 @@ import { currentActor } from "@/lib/session";
 // matching role for a genuinely multi-role one.
 export default async function HomePage() {
   const actor = await currentActor();
-  if (!actor) redirect("/login");
+  if (!actor) return <LandingPage />;
 
   if (actor.studentId) redirect("/student/tomorrow");
   if (actor.teacherId) redirect("/teacher");
