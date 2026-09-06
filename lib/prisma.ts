@@ -6,7 +6,16 @@ declare global {
 }
 
 function createClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  // max caps how many physical connections *this one pool* ever opens.
+  // Left at pg's default (10), a handful of concurrent serverless function
+  // instances each spin up their own pool and collectively blow past
+  // Supabase's pooler connection ceiling (session-mode pool_size 15 on the
+  // free tier) — the exact error a parallel seed insert hit directly
+  // (EMAXCONNSESSION), and very likely the same failure mode behind
+  // unrelated-looking 500s on ordinary page loads. A real page needs at
+  // most a couple of connections at once, so this has no effect on local
+  // dev correctness.
+  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL, max: 3 });
   return new PrismaClient({ adapter });
 }
 
