@@ -99,10 +99,7 @@ export function BindScannerModal({
         ) : (
           <>
             <div className="mt-3">
-              <QRScanner onDecode={(code) => void handleDecode(code)} paused={busy}>
-                <p className="pointer-events-none absolute inset-x-0 top-4 text-center text-sm text-white/75">
-                  กำลังผูก: {nextTarget.label}
-                </p>
+              <QRScanner onDecode={(code) => void handleDecode(code)} paused={busy} overlayText={`กำลังผูก: ${nextTarget.label}`}>
                 {busy && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/50">
                     <Loader2 className="size-8 animate-spin text-white" />

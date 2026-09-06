@@ -95,14 +95,17 @@ export function QRScanner({
 
   return (
     <div className={cn("relative aspect-[4/3] w-full overflow-hidden bg-[#221C18]", className)}>
-      <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+      <video ref={videoRef} muted playsInline className="absolute inset-0 h-full w-full object-cover" />
       <canvas ref={canvasRef} hidden />
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <div className="size-56 rounded-2xl border-4 border-white/80" />
+      {/* Text and frame stacked in normal flow (not two independent
+          absolute layers) so they can never overlap regardless of the
+          container's actual height — a fixed-size frame perfectly centered
+          on a short (aspect-[4/3]) container used to land right on top of
+          text pinned near the top. */}
+      <div className="pointer-events-none relative flex h-full flex-col items-center justify-center gap-3 p-4">
+        {overlayText && <p className="text-center text-sm text-white/75">{overlayText}</p>}
+        <div className="aspect-square w-2/3 max-w-56 rounded-2xl border-4 border-white/80" />
       </div>
-      {overlayText && (
-        <p className="pointer-events-none absolute inset-x-0 top-4 text-center text-sm text-white/75">{overlayText}</p>
-      )}
       {cameraError && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6 text-center text-sm text-white">
           เปิดกล้องไม่ได้ กรุณาอนุญาตการใช้กล้องแล้วลองใหม่
