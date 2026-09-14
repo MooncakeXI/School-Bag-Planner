@@ -4,8 +4,6 @@ import { schoolDateToUtcMidnight, schoolToday } from "./time";
 // Per-school anti-cheat/points tuning (CLAUDE.md "Anti-cheat"), columns on
 // School — see prisma/schema.prisma's comment there for defaults/reasoning.
 export type SchoolSettings = {
-  packingWindowStartHour: number;
-  packingWindowEndHour: number;
   morningWindowStartMinute: number;
   morningWindowEndMinute: number;
   sessionTtlMinutes: number;
@@ -13,8 +11,6 @@ export type SchoolSettings = {
 };
 
 const SETTINGS_SELECT = {
-  packingWindowStartHour: true,
-  packingWindowEndHour: true,
   morningWindowStartMinute: true,
   morningWindowEndMinute: true,
   sessionTtlMinutes: true,
@@ -26,8 +22,6 @@ const SETTINGS_SELECT = {
 // lookups degrade gracefully (mirrors lib/required-items.ts's "no
 // enrollment -> empty result") instead of throwing.
 const FALLBACK_SETTINGS: SchoolSettings = {
-  packingWindowStartHour: 18,
-  packingWindowEndHour: 24,
   morningWindowStartMinute: 300, // 05:00
   morningWindowEndMinute: 450, // 07:30
   sessionTtlMinutes: 20,

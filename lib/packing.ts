@@ -5,7 +5,7 @@ import { can, type Resource } from "./policy";
 import { schoolSettingsForStudent, type SchoolSettings } from "./school-settings";
 import { savePhoto, shouldCapturePhoto } from "./photo-storage";
 import { hasActiveConsent } from "./consent";
-import { PackingWindowClosedError, InvalidScanError, ForbiddenError } from "./errors";
+import { InvalidScanError, ForbiddenError } from "./errors";
 import { schoolNow, schoolToday, schoolTomorrow, schoolDateToUtcMidnight, type SchoolDate } from "./time";
 import type { Actor } from "./actor";
 import { requireHomeroomAccessForStudent } from "./roster";
@@ -20,33 +20,9 @@ function isInMorningWindow(settings: SchoolSettings): boolean {
   return minutes >= settings.morningWindowStartMinute && minutes < settings.morningWindowEndMinute;
 }
 
-function isInEveningWindow(settings: SchoolSettings): boolean {
-  const minutes = minutesSinceMidnight();
-  return minutes >= settings.packingWindowStartHour * 60 && minutes < settings.packingWindowEndHour * 60;
-}
-
 /**
- * Which date `schoolNow()` is currently open to pack for, server-side —
- * never anything the client sends. Two independent windows: a morning one
- * (default 05:00-07:30, many Thai families pack the bag the morning of, not
- * the night before) targets *today*; the evening one targets *tomorrow*, as
- * it always has. `null` outside both. The two windows can never resolve to
- * the same date on the same calendar day (today != tomorrow), so a morning
- * session and an evening session are always distinct `PackingSession` rows
- * — completing one can never double-award the other (see `getOrStartSession`).
- */
-function resolveOpenWindow(settings: SchoolSettings): SchoolDate | null {
-  if (isInMorningWindow(settings)) return schoolToday();
-  if (isInEveningWindow(settings)) return schoolTomorrow();
-  return null;
-}
-
-/**
- * The date the student's own screen should frame itself around outside an
- * active window too (browsing, not actively scanning): "today" while the
- * morning window is open, "tomorrow" the rest of the time (unchanged from
- * before the morning window existed) — evening-window and between-windows
- * browsing both default to tomorrow, since that's the primary case.
+ * The date the student's screen and scan both target: today during the
+ * configured morning period, tomorrow at every other time.
  */
 export function packingFocusDate(settings: SchoolSettings): SchoolDate {
   return isInMorningWindow(settings) ? schoolToday() : schoolTomorrow();
@@ -58,9 +34,8 @@ function isExpired(session: { startedAt: Date }, sessionTtlMinutes: number): boo
 
 /**
  * Finds the student's ACTIVE session for `forDate` (already resolved by the
- * caller — `resolveOpenWindow` for the normal flow, always `schoolTomorrow()`
- * for `recordTeacherScan` — to whichever window is currently open, or
- * explicitly bypassed), lazily expiring a stale one, and starting a fresh
+ * caller — `packingFocusDate` for the normal flow, always `schoolTomorrow()`
+ * for `recordTeacherScan`), lazily expiring a stale one and starting a fresh
  * one.
  *
  * Expiry resets the clock, not the student's progress: a prior session's
@@ -161,8 +136,8 @@ async function tryCompleteSession(sessionId: string, studentId: string, forDate:
 
 /**
  * The actual scan mechanics, shared by `recordScan` (the student, on their
- * own device, inside a live window) and `recordTeacherScan` (the homeroom
- * teacher, on the student's behalf, window bypassed — §8.3a). Everything
+ * own device) and `recordTeacherScan` (the homeroom teacher, on the
+ * student's behalf). Everything
  * that makes a scan "count" the same way regardless of who's holding the
  * camera lives here: code resolution, ownership, session continuity, the
  * photo consent+sampling gate, and completion — so completion, points,
@@ -227,8 +202,7 @@ export async function recordScan(actor: Actor, params: { code: string; photoData
   if (!actor.studentId) throw new ForbiddenError("view_student", { type: "student", studentId: "" });
 
   const settings = await schoolSettingsForStudent(actor.studentId);
-  const forDate = resolveOpenWindow(settings);
-  if (!forDate) throw new PackingWindowClosedError();
+  const forDate = packingFocusDate(settings);
 
   return performScan(actor.studentId, params.code, params.photoDataUrl, forDate, settings, null);
 }
@@ -263,13 +237,9 @@ export async function recordScan(actor: Actor, params: { code: string; photoData
  *   caller might supply. A subject teacher assigned to the same classroom,
  *   but not homeroom, is denied exactly like `edit_student_account`'s other
  *   uses (linking a parent, reissuing a login).
- * - **Window bypass, explicit, not a weakened check**: this function never
- *   calls `resolveOpenWindow`/`withinPackingWindow` at all — the bypass is
- *   the fact that this is an entirely separate, homeroom-gated entry point,
- *   not a flag `recordScan` could be called with. `forDate` is always
- *   `schoolTomorrow()`, matching the evening flow this substitutes for at
- *   the end of the school day, regardless of what time of day the teacher
- *   actually runs it.
+ * - **Target date**: `forDate` is always `schoolTomorrow()`, matching the
+ *   end-of-day flow this substitutes for, regardless of what time the
+ *   teacher runs it.
  * - **Attribution**: `startedByUserId: actor.userId` is stamped on the
  *   session this creates (or continues); `recordScan` always passes `null`.
  */

@@ -24,14 +24,6 @@ export class ForbiddenError extends Error {
   }
 }
 
-/** Thrown by lib/packing.ts when a scan arrives outside the configured evening window. */
-export class PackingWindowClosedError extends Error {
-  constructor() {
-    super("ยังไม่ถึงเวลาจัดกระเป๋า");
-    this.name = "PackingWindowClosedError";
-  }
-}
-
 /** Thrown by lib/packing.ts when a scanned QR code cannot be used to record a check. */
 export class InvalidScanError extends Error {
   constructor(message: string) {

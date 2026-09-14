@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { recordScan, recordTeacherScan, getPackingStatus, spotCheck } from "@/lib/packing";
 import { balance, computeStreak, manualAdjustPoints, POINTS_PER_COMPLETION } from "@/lib/points";
-import { PackingWindowClosedError, InvalidScanError, ForbiddenError } from "@/lib/errors";
+import { InvalidScanError, ForbiddenError } from "@/lib/errors";
 import { generateCode } from "@/lib/qr";
 import { weekdayOf, schoolTomorrow } from "@/lib/time";
 import type { Actor } from "@/lib/actor";
@@ -20,14 +20,9 @@ const WEEKDAY = weekdayOf(TOMORROW);
 // so seedStudentWithItem's timetable slot (seeded for TOMORROW's weekday)
 // lines up for morning-window tests without a second fixture.
 const MORNING_NOW = new Date("2026-09-07T23:00:00Z");
-// 2026-09-08 08:00 UTC = 2026-09-08 15:00 Bangkok — between both windows.
-const MIDDAY_NOW = new Date("2026-09-08T08:00:00Z");
 // 2026-09-07 08:00 UTC = 2026-09-07 15:00 Bangkok — also between both
-// windows, but one calendar day earlier than MIDDAY_NOW, so schoolTomorrow()
-// from here lands on TOMORROW (2026-09-08) — the date seedStudentWithItem's
-// timetable slot is actually seeded for. Used by recordTeacherScan's tests,
-// which need both "closed to an ordinary scan" and "the seeded item is
-// actually required that day" at once.
+// former packing windows. schoolTomorrow() from here lands on TOMORROW
+// (2026-09-08), the date seedStudentWithItem's timetable slot uses.
 const BETWEEN_WINDOWS_BEFORE_TOMORROW = new Date("2026-09-07T08:00:00Z");
 
 async function seedStudentWithItem(label: string, opts: { grading?: boolean } = {}) {
@@ -103,10 +98,11 @@ describe("packing anti-cheat & completion", () => {
     expect(status.total).toBe(0);
   });
 
-  it("rejects a scan outside the configured evening window", async () => {
+  it("allows a scan at 09:00 and targets tomorrow", async () => {
     vi.setSystemTime(new Date("2026-09-07T02:00:00Z")); // 09:00 Bangkok
     const a = await seedStudentWithItem("A");
-    await expect(recordScan(a.actor, { code: a.code })).rejects.toThrow(PackingWindowClosedError);
+    await recordScan(a.actor, { code: a.code });
+    expect((await getPackingStatus(a.student.id, TOMORROW)).items[0].checked).toBe(true);
   });
 
   it("rejects scanning another student's item", async () => {
@@ -178,10 +174,11 @@ describe("packing anti-cheat & completion", () => {
     expect(session.forDate.toISOString().slice(0, 10)).toBe(TOMORROW);
   });
 
-  it("a scan at 15:00, between both windows, is rejected with PackingWindowClosedError", async () => {
-    vi.setSystemTime(MIDDAY_NOW);
+  it("allows a scan at 15:00 and targets tomorrow", async () => {
+    vi.setSystemTime(BETWEEN_WINDOWS_BEFORE_TOMORROW);
     const a = await seedStudentWithItem("A");
-    await expect(recordScan(a.actor, { code: a.code })).rejects.toThrow(PackingWindowClosedError);
+    await recordScan(a.actor, { code: a.code });
+    expect((await getPackingStatus(a.student.id, TOMORROW)).items[0].checked).toBe(true);
   });
 
   it("a session completed in the morning is not re-completed or re-awarded by an evening scan for the same date", async () => {
@@ -376,18 +373,13 @@ describe("recordTeacherScan", () => {
   beforeEach(async () => {
     await resetDb();
     vi.useFakeTimers();
-    // Between both windows — proves the bypass is real: an ordinary
-    // recordScan here throws PackingWindowClosedError (as the "between both
-    // windows" test above shows for the same kind of instant), but this is a
-    // wholly separate, homeroom-gated entry point that never calls
-    // resolveOpenWindow at all (ARCHITECTURE.md §8.3a).
     vi.setSystemTime(BETWEEN_WINDOWS_BEFORE_TOMORROW);
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("a homeroom teacher's scan awards points to the student, bypassing the window check", async () => {
+  it("a homeroom teacher's scan awards points to the student", async () => {
     const a = await seedStudentWithItem("A");
     const teacherUser = await prisma.user.create({ data: { email: "homeroom-pack@example.com" } });
     const teacher = await prisma.teacher.create({
@@ -416,10 +408,8 @@ describe("recordTeacherScan", () => {
     const teacherRunSession = await prisma.packingSession.findFirstOrThrow({ where: { studentId: a.student.id } });
     expect(teacherRunSession.startedByUserId).toBe(teacherUser.id);
 
-    // Same instant, different student, ordinary evening/morning-independent
-    // student path — recordScan itself would reject MIDDAY_NOW, so switch
-    // to the evening window just for this half of the comparison.
-    vi.setSystemTime(EVENING_NOW);
+    // Same instant, different student: ordinary student scans remain
+    // unattributed even though scanning is now allowed at any time.
     const b = await seedStudentWithItem("B");
     await recordScan(b.actor, { code: b.code });
     const studentRunSession = await prisma.packingSession.findFirstOrThrow({ where: { studentId: b.student.id } });
