@@ -4,7 +4,7 @@ import { unlink } from "node:fs/promises";
 import { prisma } from "@/lib/prisma";
 import { recordScan } from "@/lib/packing";
 import { hasActiveConsent, grantConsentOnline, recordPaperConsent, revokeConsent, CURRENT_CONSENT_VERSION } from "@/lib/consent";
-import { localPhotoFilePath } from "@/lib/photo-storage";
+import { localPhotoFilePath, photoStorage } from "@/lib/photo-storage";
 import { generateCode } from "@/lib/qr";
 import { weekdayOf } from "@/lib/time";
 import { ForbiddenError } from "@/lib/errors";
@@ -83,6 +83,7 @@ describe("recordScan + photo capture consent", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("with no consent on file, the scan still succeeds but the photo is not saved", async () => {
@@ -113,6 +114,26 @@ describe("recordScan + photo capture consent", () => {
     const filePath = localPhotoFilePath(check.photoPath!);
     expect(existsSync(filePath)).toBe(true);
     await unlink(filePath); // this test's own cleanup — nothing under test deletes it
+  });
+
+  it("still records the scan when optional photo storage is unavailable", async () => {
+    const a = await seedStudentWithItem("storage-down");
+    await prisma.consent.create({
+      data: {
+        studentId: a.student.id,
+        scope: "PHOTO_CAPTURE",
+        version: CURRENT_CONSENT_VERSION.PHOTO_CAPTURE,
+        method: "ONLINE",
+      },
+    });
+    vi.spyOn(photoStorage, "save").mockRejectedValueOnce(new Error("read-only filesystem"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(recordScan(a.actor, { code: a.code, photoDataUrl: PHOTO_DATA_URL })).resolves.toEqual({
+      itemCopyId: a.itemCopy.id,
+    });
+    const check = await prisma.packingCheck.findFirstOrThrow({ where: { itemCopyId: a.itemCopy.id } });
+    expect(check.photoPath).toBeNull();
   });
 
   it("a consent row whose version no longer matches the current one counts as absent", async () => {

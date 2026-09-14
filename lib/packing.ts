@@ -167,12 +167,20 @@ async function performScan(
 
   const session = await getOrStartSession(studentId, forDate, settings, startedByUserId);
 
-  const photoPath =
+  let photoPath: string | null = null;
+  if (
     photoDataUrl &&
     (await hasActiveConsent(studentId, "PHOTO_CAPTURE")) &&
     (await shouldCapturePhoto(studentId, itemCopy.subjectItemId))
-      ? await savePhoto(photoDataUrl)
-      : null;
+  ) {
+    try {
+      photoPath = await savePhoto(photoDataUrl);
+    } catch (error) {
+      // Photo collection is optional training data; a storage outage must
+      // never stop a child from recording that their school item is packed.
+      console.error("[packing] failed to save optional scan photo; continuing without it", error);
+    }
+  }
 
   await prisma.packingCheck.upsert({
     where: { sessionId_itemCopyId: { sessionId: session.id, itemCopyId: itemCopy.id } },
