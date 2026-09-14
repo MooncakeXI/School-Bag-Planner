@@ -45,6 +45,8 @@ export function ScanView({ items }: { items: ScanItem[] }) {
       } else {
         setError(result.error);
       }
+    } catch {
+      setError("เชื่อมต่อระบบไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วลองสแกนอีกครั้ง");
     } finally {
       inFlightRef.current = false;
     }

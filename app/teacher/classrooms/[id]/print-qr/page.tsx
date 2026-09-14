@@ -50,7 +50,7 @@ export default async function PrintQrPage({
   const labels = await Promise.all(
     codeList.map(async (code) => ({
       code,
-      svg: await QRCode.toString(code, { type: "svg", width: 160, margin: 1 }),
+      svg: await QRCode.toString(code, { type: "svg", width: 160, margin: 4 }),
       studentName: boundInfoByCode.get(code)?.itemCopy?.student.name,
       itemName: boundInfoByCode.get(code)?.itemCopy?.subjectItem.name,
     })),
