@@ -85,36 +85,38 @@ export default async function TeacherTimetablePage({
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
+      <p className="-mt-3 text-sm text-muted-foreground lg:hidden">เลื่อนซ้าย–ขวาเพื่อดูคาบอื่น</p>
+
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-16" />
-              {WEEKDAYS.map((w) => (
-                <TableHead key={w.value} className="text-center font-heading text-[13px]">
-                  {w.label}
+              <TableHead className="sticky left-0 z-10 min-w-24 bg-card px-4 font-heading text-sm">วัน / คาบ</TableHead>
+              {PERIODS.map((period) => (
+                <TableHead key={period} className="min-w-24 px-4 text-center font-heading text-sm">
+                  คาบ {period}
                 </TableHead>
               ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {PERIODS.map((period) => (
-              <TableRow key={period}>
-                <TableCell className="font-medium text-muted-foreground">คาบ {period}</TableCell>
-                {WEEKDAYS.map((w) => {
+            {WEEKDAYS.map((w) => (
+              <TableRow key={w.value}>
+                <TableCell className="sticky left-0 z-10 bg-card px-4 font-heading font-semibold">{w.label}</TableCell>
+                {PERIODS.map((period) => {
                   const slot = slotBySpot.get(`${w.value}-${period}`);
                   const isMine = slot ? myOwnSubjectIds.has(slot.subjectId) : false;
                   return (
-                    <TableCell key={w.value} className="min-w-28 p-1.5">
+                    <TableCell key={period} className="min-w-24 p-2">
                       {slot ? (
                         <div
                           className={cn(
-                            "flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl p-1.5 text-center",
+                            "flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-lg p-2.5 text-center",
                             isMine ? "bg-primary/10 ring-2 ring-primary/60" : "bg-muted/60",
                           )}
                         >
-                          <SubjectChip subjectName={slot.subject.name} className="size-7 text-[9.5px]" />
-                          <span className={cn("truncate text-[11px] leading-tight", isMine ? "font-semibold text-primary" : "text-muted-foreground")}>
+                          <SubjectChip subjectName={slot.subject.name} className="size-8" showIcon />
+                          <span className={cn("w-full whitespace-normal px-1 text-xs leading-snug", isMine ? "font-semibold text-primary" : "text-muted-foreground")}>
                             {slot.subject.name}
                           </span>
                         </div>

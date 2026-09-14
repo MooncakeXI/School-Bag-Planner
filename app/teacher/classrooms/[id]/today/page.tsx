@@ -3,7 +3,7 @@ import { requireActor } from "@/lib/session";
 import { classroomTodayDashboard } from "@/lib/dashboard";
 import { ForbiddenError } from "@/lib/errors";
 import { PageHeader } from "@/components/page-header";
-import { StudentAvatar } from "@/components/student-avatar";
+import { StudentAvatar, shortStudentName } from "@/components/student-avatar";
 import { Button } from "@/components/ui/button";
 import { spotCheckAction, bulkCollectAction } from "./actions";
 
@@ -40,7 +40,7 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
       <PageHeader title={DATE_FMT.format(new Date())} subtitle={`เช็กความพร้อมสำหรับพรุ่งนี้ · ${dashboard.classroomName}`} />
 
       {dashboard.isHoliday && (
-        <div className="rounded-2xl border border-border bg-card p-4 text-center text-sm text-muted-foreground">
+        <div className="rounded-3xl border border-border bg-card p-5 text-center text-base text-muted-foreground">
           วันนี้เป็นวันหยุด ไม่มีคาบเรียน
         </div>
       )}
@@ -60,8 +60,8 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
         {packing ? (
           <div className="rounded-3xl border border-border bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="font-heading text-base font-semibold">ใครจัดกระเป๋าแล้ว</h2>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <h2 className="font-heading text-xl font-semibold">ใครจัดกระเป๋าแล้ว</h2>
+              <div className="hidden items-center gap-3 text-sm text-muted-foreground sm:flex">
                 {LEGEND.map((l) => (
                   <span key={l.status} className="flex items-center gap-1.5">
                     <span
@@ -77,11 +77,13 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
                 ))}
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-4 gap-x-3 gap-y-4 sm:grid-cols-6">
+            <div className="mt-5 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-6">
               {packing.students.map((s) => (
                 <div key={s.id} className="flex flex-col items-center gap-1.5 text-center">
-                  <StudentAvatar name={s.name} status={s.status} className="size-11 text-base" />
-                  <span className="max-w-full truncate text-xs text-muted-foreground">{s.name}</span>
+                  <StudentAvatar name={s.name} status={s.status} className="size-12 text-base" />
+                  <span title={s.name} className="line-clamp-2 min-h-10 max-w-full text-sm font-medium leading-snug text-muted-foreground">
+                    {shortStudentName(s.name)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -93,8 +95,8 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
         )}
 
         <div className="rounded-3xl border border-border bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
-          <h2 className="font-heading text-base font-semibold">เก็บสมุดตรวจวันนี้</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">แตะเพื่อบันทึกว่าเก็บครบทั้งห้องแล้ว</p>
+          <h2 className="font-heading text-xl font-semibold">เก็บสมุดตรวจวันนี้</h2>
+          <p className="mt-1 text-sm text-muted-foreground">แตะเพื่อบันทึกว่าเก็บครบทั้งห้องแล้ว</p>
 
           {collectibleItems.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">ไม่มีวิชาที่มีคาบวันนี้ (ในขอบเขตที่คุณจัดการได้)</p>
@@ -103,10 +105,10 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
               {collectibleItems.map((item) => {
                 const isCollected = item.totalStudents > 0 && item.collectedCount === item.totalStudents;
                 return (
-                  <div key={item.subjectItemId} className="flex items-center justify-between gap-3 rounded-2xl bg-muted/60 p-3">
+                  <div key={item.subjectItemId} className="flex min-h-16 items-center justify-between gap-3 rounded-2xl bg-muted/60 p-3.5">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{item.subjectItemName}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="truncate text-base font-semibold">{item.subjectItemName}</p>
+                      <p className="text-sm text-muted-foreground">
                         {item.periods.length > 0 ? `เก็บตอนคาบ ${item.periods.join(", ")} · ` : ""}
                         {item.collectedCount}/{item.totalStudents} คน
                       </p>
@@ -147,8 +149,8 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
 
       {spotCheckable.length > 0 && (
         <div className="rounded-3xl border border-border bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
-          <h2 className="font-heading text-base font-semibold">ตรวจของที่นักเรียนสแกนไว้</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">ถ้าของไม่อยู่ในกระเป๋าจริง กดแจ้งเพื่อหักคะแนนและตัดสตรีค</p>
+          <h2 className="font-heading text-xl font-semibold">ตรวจของที่นักเรียนสแกนไว้</h2>
+          <p className="mt-1 text-sm text-muted-foreground">ถ้าของไม่อยู่ในกระเป๋าจริง กดแจ้งเพื่อหักคะแนนและตัดสตรีค</p>
           <div className="mt-4 flex flex-col gap-3">
             {spotCheckable.map((s) => (
               <div key={s.id} className="rounded-2xl bg-muted/60 p-3.5">
@@ -190,9 +192,9 @@ export default async function ClassroomTodayPage({ params }: { params: Promise<{
 function StatCard({ value, label, tone }: { value: number; label: string; tone: "success" | "warning" | "neutral" | "primary" }) {
   const TONE_TEXT = { success: "text-success", warning: "text-warning", neutral: "text-muted-foreground", primary: "text-primary" } as const;
   return (
-    <div className="rounded-2xl bg-card p-4 ring-1 ring-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
+    <div className="min-h-24 rounded-3xl bg-card p-5 ring-1 ring-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
       <p className={`font-heading text-3xl font-bold ${TONE_TEXT[tone]}`}>{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-medium text-muted-foreground">{label}</p>
     </div>
   );
 }

@@ -21,31 +21,42 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   ]);
 
   return (
-    // md:h-dvh + md:overflow-hidden turns the row below into its own
-    // scroll container on tablet/desktop, so the sidebar (given its own
+    // lg:h-dvh + lg:overflow-hidden turns the row below into its own
+    // scroll container on desktop, so the sidebar (given its own
     // overflow-y-auto) stays fixed in place instead of scrolling away with
     // a long page (e.g. a classroom's full student roster) — mobile is
     // untouched (no sidebar there; the bottom tab bar is already `fixed`).
-    <div className="flex-1 flex flex-col md:h-dvh md:overflow-hidden">
-      {/* Compact iOS nav bar — just identity + sign out. The big page title
-          lives in each page's own PageHeader, not here (see components/page-header.tsx). */}
-      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/85 backdrop-blur-lg print:hidden">
-        <div className="flex items-center justify-between px-4 py-2.5">
-          <div className="flex items-center gap-1.5 font-heading text-sm font-semibold text-muted-foreground">
-            <Backpack className="size-4 text-primary" />
-            จัดกระเป๋าไปโรงเรียน
+    <div className="teacher-shell flex-1 flex flex-col lg:h-dvh lg:overflow-hidden">
+      {/* Mobile owns the top identity bar; tablet/desktop owns the sidebar,
+          so the logo never appears twice at the same breakpoint. */}
+      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 backdrop-blur-lg print:hidden lg:hidden">
+        <div className="flex items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2 font-heading font-semibold">
+            <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+              <Backpack className="size-5" aria-hidden />
+            </span>
+            <span>
+              <span className="block text-sm leading-tight">จัดกระเป๋าไปโรงเรียน</span>
+              <span className="block text-xs font-normal text-muted-foreground">พื้นที่คุณครู</span>
+            </span>
           </div>
-          <SignOutButton className="text-muted-foreground hover:text-foreground" />
+          <SignOutButton className="rounded-xl bg-card px-3 text-muted-foreground shadow-sm hover:text-foreground" />
         </div>
       </header>
       {/* TeacherSidebar (desktop/tablet, md+) and TeacherTabBar (phone,
-          below md) are two views of the same 6 destinations, never both at
+          below md) are two views of the same 7 destinations, never both at
           once — see each component's own responsive classes. The sidebar's
           own shape never changes across routes; viewing a specific
           classroom only expands a nested section under "ห้องเรียน". */}
       <div className="flex flex-1 min-h-0 md:flex-row">
-        <TeacherSidebar classrooms={classrooms} pendingRedemptionCount={pendingRedemptionCount} />
-        <div className="flex-1 min-w-0 bg-background p-4 pb-24 md:overflow-y-auto md:p-6">{children}</div>
+        <TeacherSidebar
+          classrooms={classrooms}
+          pendingRedemptionCount={pendingRedemptionCount}
+          signOutControl={<SignOutButton className="w-full justify-start rounded-xl text-muted-foreground hover:text-foreground" />}
+        />
+        <main className="flex-1 min-w-0 bg-background p-4 pb-24 lg:overflow-y-auto lg:p-6">
+          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        </main>
       </div>
       <TeacherTabBar pendingRedemptionCount={pendingRedemptionCount} />
     </div>

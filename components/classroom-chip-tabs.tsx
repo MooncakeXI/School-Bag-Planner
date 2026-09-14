@@ -24,7 +24,7 @@ export function ClassroomChipTabs({
           href={hrefFor(c.id)}
           aria-current={c.id === activeId ? "page" : undefined}
           className={cn(
-            "flex min-h-9 shrink-0 items-center rounded-full px-4 text-sm font-semibold whitespace-nowrap transition-colors",
+            "flex min-h-11 shrink-0 items-center rounded-full px-5 text-base font-semibold whitespace-nowrap transition-colors",
             c.id === activeId ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
           )}
         >

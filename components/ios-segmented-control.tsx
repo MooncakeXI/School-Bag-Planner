@@ -21,7 +21,7 @@ export function SegmentedOption({
       type="submit"
       aria-pressed={active}
       className={cn(
-        "min-h-9 rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
+        "min-h-11 rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
         active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
         className,
       )}

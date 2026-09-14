@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CircleAlert, X } from "lucide-react";
 import { QRScanner } from "@/components/qr-scanner";
 import { SubjectChip } from "@/components/subject-chip";
 import { recordScanAction } from "@/app/student/scan/actions";
@@ -50,7 +51,30 @@ export function ScanView({ items }: { items: ScanItem[] }) {
   }, [router]);
 
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-[#141110]">
+    <div className="relative mx-auto flex w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-[#141110]">
+      {error && (
+        <div
+          role="alert"
+          className="absolute inset-x-4 top-4 z-30 flex items-start gap-3 rounded-2xl border border-border bg-card/95 p-3 text-foreground shadow-xl backdrop-blur motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+            <CircleAlert className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1 py-0.5">
+            <p className="font-heading text-base font-semibold">ยังสแกนไม่ได้</p>
+            <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{error}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="ปิดข้อความแจ้งเตือน"
+            className="-m-1 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => setError(null)}
+          >
+            <X className="size-5" aria-hidden />
+          </button>
+        </div>
+      )}
+
       <QRScanner onDecode={handleDecoded} overlayText="เล็งสติกเกอร์ QR บนปกหนังสือ">
         <div className="absolute inset-x-0 bottom-4 flex justify-center">
           <span className="rounded-full bg-white/15 px-4 py-2 text-sm text-white">
@@ -68,10 +92,6 @@ export function ScanView({ items }: { items: ScanItem[] }) {
           </div>
         </div>
       )}
-      {error && (
-        <div className="mx-4 mt-4 rounded-2xl bg-accent p-3.5 text-center text-sm text-accent-foreground">{error}</div>
-      )}
-
       <div className="flex flex-col gap-2 p-4">
         <p className="px-1 text-[13px] text-white/50">ยังไม่ได้สแกน</p>
         {remaining.map((item) => (

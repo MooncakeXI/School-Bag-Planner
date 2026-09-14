@@ -4,7 +4,7 @@ import { currentHomeworkForTeacher, formatHomeworkDeadline, homeworkTargetsForTe
 import { schoolNow } from "@/lib/time";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DeadlineFields } from "@/components/deadline-fields";
 import { createHomeworkAction } from "./actions";
 
 export default async function TeacherHomeworkPage() {
@@ -50,16 +50,7 @@ export default async function TeacherHomeworkPage() {
             />
           </label>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
-              วันที่กำหนดส่ง
-              <Input name="deadlineDate" type="date" defaultValue={tomorrow} required className="h-10" />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm font-medium">
-              เวลากำหนดส่ง
-              <Input name="deadlineTime" type="time" defaultValue="23:59" required className="h-10" />
-            </label>
-          </div>
+          <DeadlineFields defaultDate={tomorrow} defaultTime="23:59" />
 
           <Button type="submit" className="min-h-11 self-end rounded-xl">
             <Send className="size-4" />

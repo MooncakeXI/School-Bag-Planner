@@ -26,8 +26,8 @@ export function RowIcon({
   className?: string;
 }) {
   return (
-    <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", TONES[tone], className)}>
-      <Icon className="size-4.5" />
+    <div className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", TONES[tone], className)}>
+      <Icon className="size-5" aria-hidden />
     </div>
   );
 }

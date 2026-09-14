@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
 import { ListGroup, ListRow } from "@/components/ios-list";
 import { RowIcon } from "@/components/row-icon";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import {
   createRewardAction,
   deleteRewardAction,
@@ -75,18 +76,23 @@ export default async function TeacherRewardsPage() {
             <ListRow
               key={reward.id}
               chevron={false}
+              className="flex-wrap"
               leading={<RowIcon icon={Gift} tone={reward.active ? "primary" : "neutral"} />}
               trailing={
-                <div className="flex items-center gap-1">
-                  <form action={restockRewardAction} className="flex items-center gap-1">
+                <div className="flex w-full flex-wrap items-center justify-end gap-2 pl-14 sm:w-auto sm:pl-0">
+                  <form action={restockRewardAction} className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="rewardId" value={reward.id} />
+                    <Label htmlFor={`stock-${reward.id}`} className="text-xs text-muted-foreground">
+                      จำนวนคงเหลือ
+                    </Label>
                     <Input
+                      id={`stock-${reward.id}`}
                       name="stock"
                       type="number"
                       min={0}
                       defaultValue={reward.stock ?? ""}
                       placeholder="ไม่จำกัด"
-                      className="h-9 w-20 text-xs"
+                      className="w-24 text-sm"
                     />
                     <Button type="submit" variant="outline" size="sm" className="h-9 px-2 text-xs">
                       บันทึก
@@ -101,9 +107,16 @@ export default async function TeacherRewardsPage() {
                   </form>
                   <form action={deleteRewardAction}>
                     <input type="hidden" name="rewardId" value={reward.id} />
-                    <Button type="submit" variant="ghost" size="icon" className="size-9" aria-label="ลบของรางวัลนี้">
+                    <ConfirmSubmitButton
+                      type="submit"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11"
+                      aria-label={`ลบของรางวัล ${reward.name}`}
+                      confirmMessage={`ลบของรางวัล “${reward.name}” ถาวรใช่ไหม`}
+                    >
                       <Trash2 className="size-4 text-destructive" />
-                    </Button>
+                    </ConfirmSubmitButton>
                   </form>
                 </div>
               }
@@ -143,7 +156,7 @@ export default async function TeacherRewardsPage() {
               ) : (
                 <input type="hidden" name="schoolId" value={schools[0].id} />
               )}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="name">ชื่อของรางวัล</Label>
                   <Input id="name" name="name" placeholder="เช่น ดินสอ 2B" className="h-11" required />
@@ -158,7 +171,7 @@ export default async function TeacherRewardsPage() {
                 </div>
               </div>
               <Button type="submit" className="min-h-11 self-start rounded-xl">
-                เพิ่ม
+                เพิ่มของรางวัล
               </Button>
             </form>
           </CardContent>

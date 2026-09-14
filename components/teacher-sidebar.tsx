@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LayoutDashboard, Users, BookOpen, CalendarDays, CalendarOff, ClipboardPenLine, Gift, Backpack, CalendarCheck2, QrCode } from "lucide-react";
@@ -16,7 +17,7 @@ const LINKS: { href: string; label: string; icon: typeof LayoutDashboard; exact?
 ];
 
 // One persistent sidebar — same top-level destinations, same order, same
-// position, on every /teacher/* page, tablet/desktop only (phone keeps the
+// position, on every /teacher/* page, desktop only (phone/tablet keeps the
 // bottom tab bar, components/teacher-tab-bar.tsx). Previously this swapped
 // out entirely for a different "classroom-contextual" sidebar while inside
 // a classroom's own pages, which left no way back to the other 5
@@ -28,18 +29,22 @@ const LINKS: { href: string; label: string; icon: typeof LayoutDashboard; exact?
 export function TeacherSidebar({
   classrooms,
   pendingRedemptionCount = 0,
+  signOutControl,
 }: {
   classrooms: { id: string; name: string }[];
   pendingRedemptionCount?: number;
+  signOutControl?: ReactNode;
 }) {
   const pathname = usePathname();
   const classroomMatch = pathname.match(/^\/teacher\/classrooms\/([^/]+)/);
   const currentClassroom = classroomMatch ? classrooms.find((c) => c.id === classroomMatch[1]) : undefined;
 
   return (
-    <nav className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground md:flex">
-      <div className="flex items-center gap-2 px-2 py-3 font-heading text-sm font-semibold">
-        <Backpack className="size-4.5 text-sidebar-primary" />
+    <nav className="hidden w-64 shrink-0 flex-col gap-2 overflow-y-auto border-r border-border bg-card p-4 text-foreground lg:flex">
+      <div className="flex items-center gap-2.5 px-2 py-3 font-heading font-semibold">
+        <span className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+          <Backpack className="size-5" aria-hidden />
+        </span>
         จัดกระเป๋าไปโรงเรียน
       </div>
       {LINKS.map((link) => {
@@ -51,8 +56,8 @@ export function TeacherSidebar({
               href={link.href}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors",
-                isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60",
+                "relative flex min-h-12 items-center gap-3 rounded-2xl px-3.5 text-base font-semibold transition-colors",
+                isActive ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
             >
               <link.icon className="size-4.5" strokeWidth={isActive ? 2.25 : 2} />
@@ -73,6 +78,7 @@ export function TeacherSidebar({
           </div>
         );
       })}
+      {signOutControl && <div className="mt-auto border-t border-border pt-3">{signOutControl}</div>}
     </nav>
   );
 }
@@ -86,8 +92,8 @@ function ClassroomSubNav({ classroomId, classroomName, pathname }: { classroomId
   ];
 
   return (
-    <div className="ml-4 flex flex-col gap-1 border-l border-sidebar-border py-1 pl-3">
-      <p className="truncate px-2 py-1 text-xs font-semibold text-sidebar-foreground/50">{classroomName}</p>
+    <div className="ml-5 flex flex-col gap-1 border-l-2 border-border py-1 pl-3">
+      <p className="truncate px-2 py-1 text-sm font-semibold text-muted-foreground">{classroomName}</p>
       {subLinks.map((link) => {
         const isActive = pathname === link.href;
         return (
@@ -96,8 +102,8 @@ function ClassroomSubNav({ classroomId, classroomName, pathname }: { classroomId
             href={link.href}
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex min-h-9 items-center gap-2.5 rounded-lg px-2 text-[13px] font-medium transition-colors",
-              isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60",
+              "flex min-h-11 items-center gap-2.5 rounded-xl px-2.5 text-sm font-semibold transition-colors",
+              isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >
             <link.icon className="size-4" strokeWidth={isActive ? 2.25 : 2} />

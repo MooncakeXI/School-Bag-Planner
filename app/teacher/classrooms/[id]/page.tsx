@@ -1,17 +1,15 @@
 import { notFound } from "next/navigation";
-import { QrCode, Printer, UserPlus, ClipboardCheck, ScanLine, KeyRound, Users, Camera, Coins, Backpack, type LucideIcon } from "lucide-react";
+import { QrCode, Printer, UserPlus, ClipboardCheck, ScanLine, KeyRound, Users, Camera, Coins, Backpack, ChevronDown, Plus, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { requireActor } from "@/lib/session";
 import { can } from "@/lib/policy";
 import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
 import { schoolDateToUtcMidnight, schoolToday } from "@/lib/time";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { SubjectChip } from "@/components/subject-chip";
-import { StudentAvatar } from "@/components/student-avatar";
 import { IssueCredentialsButton } from "@/components/issue-credentials-button";
 import { PageHeader } from "@/components/page-header";
 import { ListGroup, ListRow } from "@/components/ios-list";
@@ -19,6 +17,7 @@ import { SegmentedControl, SegmentedOption } from "@/components/ios-segmented-co
 import { ScanBindButton } from "@/components/scan-bind-button";
 import { RapidBindButton } from "@/components/rapid-bind-button";
 import { BulkAddItemsButton } from "@/components/bulk-add-items-button";
+import { StudentDetailDialog } from "@/components/student-detail-dialog";
 import { hasActiveConsent } from "@/lib/consent";
 import { balance } from "@/lib/points";
 import {
@@ -142,13 +141,13 @@ export default async function ClassroomRosterPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <PageHeader title={classroom.name} />
+        <PageHeader title={classroom.name} subtitle="แตะชื่อนักเรียนเพื่อเปิดบัญชี ผู้ปกครอง แต้ม และอุปกรณ์" />
         {isHomeroomTeacher && (
           <SegmentedControl className="self-start">
             <Link
               href={`/teacher/classrooms/${classroomId}`}
               className={cn(
-                "flex min-h-9 items-center rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
+                "flex min-h-11 items-center rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
                 !showMyItemsOnly ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -157,7 +156,7 @@ export default async function ClassroomRosterPage({
             <Link
               href={`/teacher/classrooms/${classroomId}?myOnly=true`}
               className={cn(
-                "flex min-h-9 items-center rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
+                "flex min-h-11 items-center rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors",
                 showMyItemsOnly ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -199,19 +198,19 @@ export default async function ClassroomRosterPage({
         {students.map((student) => {
           const coveredSubjectItemIds = new Set(student.itemCopies.map((ic) => ic.subjectItem.id));
           const missingSubjectItems = subjectItemsHere.filter((si) => !coveredSubjectItemIds.has(si.id));
+          const boundItemCount = student.itemCopies.filter((ic) => ic.qrCodes.length > 0).length;
 
           return (
-            <Card key={student.id} className="rounded-3xl">
-              <CardHeader className="flex flex-row items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <StudentAvatar name={student.name} />
-                  <CardTitle className="text-base">{student.name}</CardTitle>
-                </div>
-                {isHomeroomTeacher && (
+            <StudentDetailDialog
+              key={student.id}
+              name={student.name}
+              meta={`QR ${boundItemCount}/${student.itemCopies.length} รายการ`}
+              actions={
+                isHomeroomTeacher ? (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="min-h-9 rounded-xl"
+                    className="self-start rounded-xl"
                     nativeButton={false}
                     render={
                       <Link href={`/teacher/classrooms/${classroomId}/pack/${student.id}`}>
@@ -220,9 +219,9 @@ export default async function ClassroomRosterPage({
                       </Link>
                     }
                   />
-                )}
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
+                ) : undefined
+              }
+              account={
                 <ListGroup label={<GroupLabel icon={KeyRound}>บัญชีเข้าใช้งาน (สำหรับนักเรียน)</GroupLabel>}>
                   <ListRow
                     chevron={false}
@@ -241,8 +240,10 @@ export default async function ClassroomRosterPage({
                     )}
                   </ListRow>
                 </ListGroup>
-
-                <ListGroup label={<GroupLabel icon={Users}>ผู้ปกครอง</GroupLabel>}>
+              }
+              guardians={
+                <div className="flex flex-col gap-4">
+                  <ListGroup label={<GroupLabel icon={Users}>ผู้ปกครอง</GroupLabel>}>
                   {student.guardianships.length === 0 ? (
                     <ListRow chevron={false}>
                       <span className="text-sm text-muted-foreground">ยังไม่มีผู้ปกครองผูกไว้</span>
@@ -257,23 +258,30 @@ export default async function ClassroomRosterPage({
                     ))
                   )}
                   {isHomeroomTeacher && (
-                    <div className="p-3">
-                      <form action={linkParentAction} className="flex flex-wrap items-center gap-2">
+                    <div className="bg-muted/35 p-4">
+                      <p className="mb-3 text-sm font-semibold">เพิ่มผู้ปกครอง</p>
+                      <form action={linkParentAction} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                         <input type="hidden" name="classroomId" value={classroomId} />
                         <input type="hidden" name="studentId" value={student.id} />
-                        <Input name="name" placeholder="ชื่อผู้ปกครอง" className="h-10 w-36 text-sm" required />
-                        <Input name="email" type="email" placeholder="อีเมล" className="h-10 w-48 text-sm" required />
-                        <Button type="submit" className="min-h-10 rounded-xl" variant="outline">
+                        <label className="flex flex-col gap-1.5 text-sm font-medium">
+                          ชื่อผู้ปกครอง
+                          <Input name="name" placeholder="ชื่อ-นามสกุล" required />
+                        </label>
+                        <label className="flex flex-col gap-1.5 text-sm font-medium">
+                          อีเมล
+                          <Input name="email" type="email" placeholder="name@example.com" required />
+                        </label>
+                        <Button type="submit" className="rounded-xl" variant="outline">
                           <UserPlus className="size-3.5" />
-                          เพิ่ม
+                          เพิ่มผู้ปกครอง
                         </Button>
                       </form>
                     </div>
                   )}
-                </ListGroup>
+                  </ListGroup>
 
-                {isHomeroomTeacher && (
-                  <ListGroup label={<GroupLabel icon={Camera}>ความยินยอมถ่ายรูป</GroupLabel>}>
+                  {isHomeroomTeacher && (
+                    <ListGroup label={<GroupLabel icon={Camera}>ความยินยอมถ่ายรูป</GroupLabel>}>
                     <ListRow chevron={false}>
                       <span className="text-sm text-muted-foreground">
                         {consentByStudent.get(student.id) ? "ให้ความยินยอมแล้ว" : "ยังไม่ได้ให้ความยินยอม"}
@@ -298,36 +306,40 @@ export default async function ClassroomRosterPage({
                         </form>
                       )}
                     </div>
-                  </ListGroup>
-                )}
-
-                {isHomeroomTeacher && (
+                    </ListGroup>
+                  )}
+                </div>
+              }
+              points={
+                isHomeroomTeacher ? (
                   <ListGroup label={<GroupLabel icon={Coins}>แต้มสะสม</GroupLabel>}>
                     <ListRow chevron={false}>
                       <span className="text-sm text-muted-foreground">
                         แต้มปัจจุบัน: <span className="font-mono text-foreground">{balanceByStudent.get(student.id)}</span>
                       </span>
                     </ListRow>
-                    <div className="p-3">
-                      <form action={manualAdjustPointsAction} className="flex flex-wrap items-center gap-2">
+                    <div className="bg-muted/35 p-4">
+                      <p className="mb-3 text-sm font-semibold">ปรับแต้มด้วยตนเอง</p>
+                      <form action={manualAdjustPointsAction} className="grid gap-3 sm:grid-cols-[8rem_1fr_auto] sm:items-end">
                         <input type="hidden" name="classroomId" value={classroomId} />
                         <input type="hidden" name="studentId" value={student.id} />
-                        <Input
-                          name="delta"
-                          type="number"
-                          placeholder="+/- แต้ม"
-                          className="h-10 w-24 text-sm"
-                          required
-                        />
-                        <Input name="note" placeholder="เหตุผล" className="h-10 w-40 text-sm" required />
-                        <Button type="submit" variant="outline" size="sm" className="min-h-10 rounded-xl">
+                        <label className="flex flex-col gap-1.5 text-sm font-medium">
+                          จำนวนแต้ม
+                          <Input name="delta" type="number" placeholder="เช่น +5 หรือ -2" required />
+                        </label>
+                        <label className="flex flex-col gap-1.5 text-sm font-medium">
+                          เหตุผล
+                          <Input name="note" placeholder="ระบุเหตุผลที่ปรับแต้ม" required />
+                        </label>
+                        <Button type="submit" variant="outline" size="sm" className="rounded-xl">
                           ปรับแต้ม
                         </Button>
                       </form>
                     </div>
                   </ListGroup>
-                )}
-
+                ) : undefined
+              }
+              items={
                 <ListGroup
                   label={<GroupLabel icon={Backpack}>อุปกรณ์การเรียน</GroupLabel>}
                   action={
@@ -346,61 +358,75 @@ export default async function ClassroomRosterPage({
                     return (
                       <div key={ic.id} className="flex flex-col gap-2.5 p-3">
                         <div className="flex items-center gap-2.5 text-sm">
-                          <SubjectChip subjectName={ic.subjectItem.subject.name} className="size-8 text-[10px]" />
+                          <SubjectChip subjectName={ic.subjectItem.subject.name} className="size-8" showIcon />
                           <div>
                             <p className="font-medium">{ic.subjectItem.name}</p>
                             <p className="text-xs text-muted-foreground">{ic.subjectItem.subject.name}</p>
                           </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <form action={setItemCopyStateAction} className="contents">
-                            <input type="hidden" name="classroomId" value={classroomId} />
-                            <input type="hidden" name="itemCopyId" value={ic.id} />
-                            <SegmentedControl>
-                              <SegmentedOption name="state" value="WITH_STUDENT" active={ic.state !== "GRADING"}>
-                                อยู่กับนักเรียน
-                              </SegmentedOption>
-                              <SegmentedOption name="state" value="GRADING" active={ic.state === "GRADING"}>
-                                ครูเก็บตรวจอยู่
-                              </SegmentedOption>
-                            </SegmentedControl>
-                          </form>
+                        <div className="grid gap-3 rounded-2xl bg-muted/50 p-3 sm:grid-cols-2">
+                          <div className="flex flex-col gap-2">
+                            <p className="text-xs font-semibold text-muted-foreground">สถานะสมุด</p>
+                            <form action={setItemCopyStateAction}>
+                              <input type="hidden" name="classroomId" value={classroomId} />
+                              <input type="hidden" name="itemCopyId" value={ic.id} />
+                              <SegmentedControl>
+                                <SegmentedOption name="state" value="WITH_STUDENT" active={ic.state !== "GRADING"}>
+                                  อยู่กับนักเรียน
+                                </SegmentedOption>
+                                <SegmentedOption name="state" value="GRADING" active={ic.state === "GRADING"}>
+                                  ครูเก็บตรวจอยู่
+                                </SegmentedOption>
+                              </SegmentedControl>
+                            </form>
+                          </div>
 
-                          {currentCode ? (
-                            <div className="flex flex-wrap items-center gap-1">
-                              <StatusBadge tone="info">
-                                <QrCode className="mr-1 size-3" />
-                                {currentCode}
-                              </StatusBadge>
-                              <form action={voidCodeAction}>
-                                <input type="hidden" name="classroomId" value={classroomId} />
-                                <input type="hidden" name="code" value={currentCode} />
-                                <Button type="submit" variant="ghost" size="sm" className="min-h-9 px-2 text-xs">
-                                  ยกเลิก
-                                </Button>
-                              </form>
-                              <form action={rebindCodeAction} className="flex items-center gap-1">
-                                <input type="hidden" name="classroomId" value={classroomId} />
-                                <input type="hidden" name="itemCopyId" value={ic.id} />
-                                <Input name="newCode" placeholder="รหัสใหม่" className="h-9 w-28 text-xs" />
-                                <Button type="submit" variant="outline" size="sm" className="min-h-9 px-2 text-xs">
-                                  เปลี่ยนสติกเกอร์
-                                </Button>
-                              </form>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-1">
-                              <ScanBindButton itemCopyId={ic.id} label={ic.subjectItem.name} />
-                              <form action={bindCodeAction} className="flex items-center gap-1">
-                                <input type="hidden" name="classroomId" value={classroomId} />
-                                <input type="hidden" name="itemCopyId" value={ic.id} />
-                                <Input name="code" placeholder="พิมพ์รหัส QR" className="h-9 w-28 text-xs" required />
-                                <Button type="submit" variant="outline" size="sm" className="min-h-9 px-2 text-xs">
-                                  ผูกรหัส
-                                </Button>
-                              </form>
-                            </div>
-                          )}
+                          <div className="flex flex-col gap-2">
+                            <p className="text-xs font-semibold text-muted-foreground">สติกเกอร์ QR</p>
+                            {currentCode ? (
+                              <>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <StatusBadge tone="info">
+                                    <QrCode className="mr-1 size-3" />
+                                    {currentCode}
+                                  </StatusBadge>
+                                  <form action={voidCodeAction}>
+                                    <input type="hidden" name="classroomId" value={classroomId} />
+                                    <input type="hidden" name="code" value={currentCode} />
+                                    <Button type="submit" variant="ghost" size="sm" className="px-2 text-xs text-destructive">
+                                      ยกเลิก QR
+                                    </Button>
+                                  </form>
+                                </div>
+                                <details>
+                                  <summary className="cursor-pointer text-sm font-semibold text-primary">เปลี่ยนสติกเกอร์</summary>
+                                  <form action={rebindCodeAction} className="mt-2 flex flex-wrap gap-2">
+                                    <input type="hidden" name="classroomId" value={classroomId} />
+                                    <input type="hidden" name="itemCopyId" value={ic.id} />
+                                    <Input name="newCode" placeholder="รหัส QR ใหม่" className="min-w-40 flex-1" />
+                                    <Button type="submit" variant="outline" size="sm">
+                                      บันทึก
+                                    </Button>
+                                  </form>
+                                </details>
+                              </>
+                            ) : (
+                              <>
+                                <ScanBindButton itemCopyId={ic.id} label={ic.subjectItem.name} />
+                                <details>
+                                  <summary className="cursor-pointer text-sm font-semibold text-primary">หรือกรอกรหัส QR เอง</summary>
+                                  <form action={bindCodeAction} className="mt-2 flex flex-wrap gap-2">
+                                    <input type="hidden" name="classroomId" value={classroomId} />
+                                    <input type="hidden" name="itemCopyId" value={ic.id} />
+                                    <Input name="code" placeholder="รหัส QR" className="min-w-40 flex-1" required />
+                                    <Button type="submit" variant="outline" size="sm">
+                                      ผูกรหัส
+                                    </Button>
+                                  </form>
+                                </details>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -418,26 +444,31 @@ export default async function ClassroomRosterPage({
                     </form>
                   ))}
                 </ListGroup>
-              </CardContent>
-            </Card>
+              }
+            />
           );
         })}
       </div>
 
-      <Card className="rounded-3xl">
-        <CardHeader>
-          <CardTitle className="text-base">เพิ่มนักเรียน</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form action={createStudentAction} className="flex items-center gap-2">
+      <details className="group overflow-hidden rounded-3xl bg-card ring-1 ring-border shadow-[0_8px_24px_-8px_rgba(0,0,0,0.12)]">
+        <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 px-5 font-heading text-lg font-semibold [&::-webkit-details-marker]:hidden">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <Plus className="size-5" aria-hidden />
+          </span>
+          เพิ่มนักเรียน
+          <ChevronDown className="ml-auto size-5 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        <form action={createStudentAction} className="grid gap-3 border-t border-border p-5 sm:grid-cols-[1fr_auto] sm:items-end">
             <input type="hidden" name="classroomId" value={classroomId} />
-            <Input name="name" placeholder="ชื่อนักเรียน" className="h-11" required />
-            <Button type="submit" className="min-h-11 rounded-xl">
-              เพิ่ม
+            <label className="flex flex-col gap-1.5 text-sm font-semibold">
+              ชื่อนักเรียน
+              <Input name="name" placeholder="เช่น มานี ใจดี" required />
+            </label>
+            <Button type="submit" className="rounded-xl">
+              เพิ่มนักเรียน
             </Button>
-          </form>
-        </CardContent>
-      </Card>
+        </form>
+      </details>
     </div>
   );
 }

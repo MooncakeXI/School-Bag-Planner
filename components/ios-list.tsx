@@ -20,17 +20,17 @@ export function ListGroup({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("flex flex-col gap-2", className)}>
       {(label || action) && (
-        <div className="flex items-center justify-between gap-2 px-4">
-          {label && <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</p>}
+        <div className="flex items-center justify-between gap-2 px-2">
+          {label && <p className="font-heading text-base font-semibold text-foreground">{label}</p>}
           {action}
         </div>
       )}
-      <div className="divide-y divide-border overflow-hidden rounded-2xl bg-card ring-1 ring-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_20px_-6px_rgba(0,0,0,0.12)]">
+      <div className="divide-y divide-border overflow-hidden rounded-3xl bg-card ring-1 ring-border shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.12)]">
         {children}
       </div>
-      {footer && <div className="px-4 text-xs text-muted-foreground">{footer}</div>}
+      {footer && <div className="px-3 text-sm text-muted-foreground">{footer}</div>}
     </div>
   );
 }
@@ -63,7 +63,7 @@ export function ListRow({
     </>
   );
 
-  const rowClass = cn("flex min-h-11 items-center gap-3 px-4 py-2.5 text-sm", className);
+  const rowClass = cn("flex min-h-16 items-center gap-3.5 px-4 py-3 text-base", className);
 
   if (href) {
     return (

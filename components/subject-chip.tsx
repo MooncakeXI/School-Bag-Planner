@@ -1,3 +1,20 @@
+import {
+  BookOpen,
+  Calculator,
+  Compass,
+  Dumbbell,
+  FlaskConical,
+  Globe,
+  Hammer,
+  HeartPulse,
+  Languages,
+  Landmark,
+  Monitor,
+  Music,
+  Palette,
+  type LucideIcon,
+} from "lucide-react";
+import { createElement, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 // Fixed palette lifted from the design reference (math/thai/sci/pe/art).
@@ -18,8 +35,32 @@ function colorFor(subjectName: string) {
   return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
-export function SubjectChip({ subjectName, className }: { subjectName: string; className?: string }) {
-  const { bg, fg } = colorFor(subjectName);
+function subjectIcon(Icon: LucideIcon) {
+  return createElement(Icon, { className: "size-1/2" });
+}
+
+const SUBJECT_ICONS: [string, ReactNode][] = [
+  ["คณิต", subjectIcon(Calculator)],
+  ["วิทย", subjectIcon(FlaskConical)],
+  ["ภาษาไทย", subjectIcon(BookOpen)],
+  ["อังกฤษ", subjectIcon(Languages)],
+  ["สังคม", subjectIcon(Globe)],
+  ["ประวัติ", subjectIcon(Landmark)],
+  ["ศาสนา", subjectIcon(Landmark)],
+  ["พละ", subjectIcon(Dumbbell)],
+  ["สุขศึกษา", subjectIcon(HeartPulse)],
+  ["ศิลป", subjectIcon(Palette)],
+  ["ดนตรี", subjectIcon(Music)],
+  ["คอม", subjectIcon(Monitor)],
+  ["เทคโนโลยี", subjectIcon(Monitor)],
+  ["การงาน", subjectIcon(Hammer)],
+  ["แนะแนว", subjectIcon(Compass)],
+];
+
+export function SubjectChip({ subjectName, className, showIcon = false }: { subjectName: string; className?: string; showIcon?: boolean }) {
+  const match = showIcon ? SUBJECT_ICONS.find(([keyword]) => subjectName.includes(keyword)) : undefined;
+  const { bg, fg } = colorFor(match?.[0] ?? subjectName);
+  const icon = match?.[1];
   return (
     <span
       className={cn(
@@ -29,7 +70,7 @@ export function SubjectChip({ subjectName, className }: { subjectName: string; c
       style={{ background: bg, color: fg }}
       aria-hidden
     >
-      {subjectName.slice(0, 2)}
+      {icon ?? subjectName.slice(0, 2)}
     </span>
   );
 }

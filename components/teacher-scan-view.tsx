@@ -84,7 +84,7 @@ export function TeacherScanView({
 
       {lastChecked && (
         <div className="mx-4 mt-4 flex items-center gap-3.5 rounded-2xl border border-[#8FD3B2]/40 bg-[#2E7D5B]/25 p-3.5">
-          <SubjectChip subjectName={lastChecked.subjectName} />
+          <SubjectChip subjectName={lastChecked.subjectName} showIcon />
           <div className="min-w-0 flex-1">
             <p className="text-[12.5px] font-semibold text-[#8FD3B2]">สแกนสำเร็จ</p>
             <p className="mt-0.5 truncate text-[15px] font-medium text-white">{lastChecked.subjectItemName}</p>
@@ -99,7 +99,7 @@ export function TeacherScanView({
         <p className="px-1 text-[13px] text-white/50">ยังไม่ได้สแกน</p>
         {remaining.map((item) => (
           <div key={item.itemCopyId} className="flex items-center gap-3 rounded-2xl bg-white/[0.07] p-3">
-            <SubjectChip subjectName={item.subjectName} className="size-9 text-[10.5px]" />
+            <SubjectChip subjectName={item.subjectName} className="size-9" showIcon />
             <span className="flex-1 truncate text-[15px] text-white/90">{item.subjectItemName}</span>
           </div>
         ))}

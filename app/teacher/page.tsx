@@ -35,12 +35,12 @@ export default async function TeacherDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="ภาพรวม" />
+      <PageHeader title="ภาพรวม" subtitle="งานสำคัญและความพร้อมของห้องเรียนวันนี้" />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard icon={Users} label="ห้องเรียนที่สอน" value={dashboard.classroomCount} tone="neutral" />
         <StatCard icon={GraduationCap} label="นักเรียนทั้งหมด" value={dashboard.studentCount} tone="success" />
-        <StatCard icon={ClipboardCheck} label="กำลังตรวจ (GRADING)" value={dashboard.gradingCount} tone="warning" />
+        <StatCard icon={ClipboardCheck} label="สมุดที่กำลังตรวจ" value={dashboard.gradingCount} tone="warning" />
       </div>
 
       <ListGroup label="วันนี้สอนอะไรบ้าง">
@@ -116,14 +116,14 @@ function StatCard({
   tone: keyof typeof TONES;
 }) {
   return (
-    <div className="rounded-2xl bg-card p-5 ring-1 ring-border">
+    <div className="min-h-24 rounded-3xl bg-card p-5 ring-1 ring-border shadow-[0_8px_24px_-8px_rgba(0,0,0,0.12)]">
       <div className="flex items-center gap-4">
-        <div className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", TONES[tone].chip)}>
-          <Icon className="size-5" />
+        <div className={cn("flex size-12 shrink-0 items-center justify-center rounded-2xl", TONES[tone].chip)}>
+          <Icon className="size-6" aria-hidden />
         </div>
         <div>
-          <p className="font-heading text-2xl font-semibold leading-none">{value}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{label}</p>
+          <p className="font-heading text-3xl font-bold leading-none">{value}</p>
+          <p className="mt-1.5 text-sm font-medium text-muted-foreground">{label}</p>
         </div>
       </div>
     </div>

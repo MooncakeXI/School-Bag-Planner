@@ -129,6 +129,24 @@ body {
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Teacher controls use the same generous touch scale as the student UI. */
+.teacher-shell [data-slot="button"],
+.teacher-shell input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+.teacher-shell select {
+  min-height: 2.75rem;
+}
+
+.teacher-shell input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+.teacher-shell select,
+.teacher-shell textarea {
+  font-size: 1rem;
+}
+
+/* Darker teacher-only warning text keeps small status labels above 4.5:1. */
+.teacher-shell {
+  --warning: #765300;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

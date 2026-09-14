@@ -18,6 +18,15 @@ function colorFor(name: string) {
   return PALETTE[Math.abs(hash) % PALETTE.length];
 }
 
+export function shortStudentName(name: string) {
+  return name.replace(/^(เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.|นาย|นางสาว)\s*/, "").trim() || name;
+}
+
+function initialFor(name: string) {
+  const shortName = shortStudentName(name);
+  return shortName.match(/#(\d+)$/)?.[1] ?? shortName.slice(0, 1);
+}
+
 // Solid-fill status colors — deliberately a different visual language from
 // the soft name-hash tint above: a solid traffic-light color reads as
 // *state* (packed / partly packed / not started), where the tinted circle
@@ -49,7 +58,7 @@ export function StudentAvatar({
         )}
         aria-hidden
       >
-        {name.slice(0, 1)}
+        {initialFor(name)}
       </span>
     );
   }
@@ -64,7 +73,7 @@ export function StudentAvatar({
       style={{ background: bg, color: fg }}
       aria-hidden
     >
-      {name.slice(0, 1)}
+      {initialFor(name)}
     </span>
   );
 }

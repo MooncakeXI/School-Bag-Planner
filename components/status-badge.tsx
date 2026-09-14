@@ -19,7 +19,7 @@ export function StatusBadge({
   children: React.ReactNode;
 }) {
   return (
-    <Badge variant="outline" className={cn("border-transparent font-medium", TONES[tone], className)}>
+    <Badge variant="outline" className={cn("min-h-7 border-transparent px-2.5 text-xs font-semibold", TONES[tone], className)}>
       {children}
     </Badge>
   );

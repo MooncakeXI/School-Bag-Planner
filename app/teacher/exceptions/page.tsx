@@ -6,15 +6,14 @@ import { visibleClassroomWhere } from "@/lib/policy";
 import { listScheduleExceptions } from "@/lib/timetable";
 import { schoolToday } from "@/lib/time";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/status-badge";
 import { PageHeader } from "@/components/page-header";
 import { ClassroomChipTabs } from "@/components/classroom-chip-tabs";
 import { ListGroup, ListRow } from "@/components/ios-list";
 import { RowIcon } from "@/components/row-icon";
-import { createExceptionAction, deleteExceptionAction } from "./actions";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { ExceptionForm } from "./exception-form";
+import { deleteExceptionAction } from "./actions";
 
 const KIND_LABEL: Record<string, string> = {
   HOLIDAY: "วันหยุด",
@@ -64,7 +63,11 @@ export default async function TeacherExceptionsPage({
     listScheduleExceptions(actor, classroom.id, { from: today, to }),
     // Scoped to this classroom's school; archived subjects excluded — an
     // exception shouldn't be able to swap in a subject that's been retired.
-    prisma.subject.findMany({ where: { schoolId: classroom.schoolId, archivedAt: null }, orderBy: { name: "asc" } }),
+    prisma.subject.findMany({
+      where: { schoolId: classroom.schoolId, archivedAt: null, teachingAssignments: { some: { classroomId: classroom.id } } },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -82,47 +85,7 @@ export default async function TeacherExceptionsPage({
           <CardTitle className="text-base">เพิ่มรายการ</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action={createExceptionAction} className="flex flex-col gap-4">
-            <input type="hidden" name="schoolId" value={classroom.schoolId} />
-            <input type="hidden" name="classroomId" value={classroom.id} />
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="date">วันที่</Label>
-                <Input id="date" type="date" name="date" className="h-11" required />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="kind">ประเภท</Label>
-                <select id="kind" name="kind" className="h-11 w-full rounded-xl border bg-background px-3 text-sm">
-                  <option value="HOLIDAY">วันหยุด (ทั้งวัน)</option>
-                  <option value="CANCELLED_PERIOD">งดคาบเรียน</option>
-                  <option value="PERIOD_SWAP">สลับคาบ (เปลี่ยนวิชา)</option>
-                  <option value="EXAM">วันสอบ</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="period">คาบที่ (ถ้ามี)</Label>
-                <Input id="period" type="number" name="period" min={1} max={8} className="h-11" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="subjectId">วิชาที่เปลี่ยนเป็น (ถ้ามี)</Label>
-                <select id="subjectId" name="subjectId" className="h-11 w-full rounded-xl border bg-background px-3 text-sm">
-                  <option value="">—</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="note">หมายเหตุ</Label>
-              <Input id="note" type="text" name="note" className="h-11" />
-            </div>
-            <Button type="submit" className="min-h-11 self-start rounded-xl">
-              เพิ่ม
-            </Button>
-          </form>
+          <ExceptionForm schoolId={classroom.schoolId} classroomId={classroom.id} subjects={subjects} />
         </CardContent>
       </Card>
 
@@ -141,9 +104,16 @@ export default async function TeacherExceptionsPage({
                 <form action={deleteExceptionAction}>
                   <input type="hidden" name="exceptionId" value={e.id} />
                   <input type="hidden" name="classroomId" value={classroom.id} />
-                  <Button type="submit" variant="ghost" size="icon" className="size-9" aria-label="ลบรายการนี้">
+                  <ConfirmSubmitButton
+                    type="submit"
+                    variant="ghost"
+                    size="icon"
+                    className="size-11"
+                    aria-label="ลบรายการนี้"
+                    confirmMessage="ลบรายการนี้ใช่ไหม"
+                  >
                     <Trash2 className="size-4 text-destructive" />
-                  </Button>
+                  </ConfirmSubmitButton>
                 </form>
               }
             >
